@@ -1050,16 +1050,21 @@
 
   /**
    * Safely dispatch click event to trigger Google Wiz/Closure actions without stealing focus.
+   * Dispatches a full pointer event sequence (pointerdown → pointerup → click) because
+   * Google's WIZ jsaction listens for pointerdown:FEiYhc and pointerup:mF5Elf in addition
+   * to click:h5M12e. Using only .click() may miss the pointer handlers on slow-loading pages.
    */
   function triggerClick(el) {
     if (!el) return;
     try {
-      if (typeof el.click === 'function') {
-        el.click();
-      } else {
-        el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-      }
-    } catch (_) {}
+      const opts = { bubbles: true, cancelable: true, view: window };
+      el.dispatchEvent(new PointerEvent('pointerdown', opts));
+      el.dispatchEvent(new PointerEvent('pointerup', opts));
+      el.dispatchEvent(new MouseEvent('click', opts));
+    } catch (_) {
+      // Fallback to the native .click() if PointerEvent isn't supported
+      try { el.click(); } catch (_2) {}
+    }
   }
 
   /**
