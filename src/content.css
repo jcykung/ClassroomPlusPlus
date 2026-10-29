@@ -31,16 +31,6 @@
   background: rgba(60, 64, 67, 0.45);
 }
 
-/* Extra space after the newest post so it can sit in the middle of the
- * window. A pseudo-element keeps Classroom's real DOM untouched. */
-.cpp-scroll-window::after {
-  content: "";
-  display: block;
-  height: var(--cpp-tail-space, 0px);
-  min-height: var(--cpp-tail-space, 0px);
-  flex: none; /* never let a flex column layout squeeze the tail to zero */
-}
-
 /* Keep post heights stable inside the window: a fixed-height flex column
  * would otherwise squeeze its (shrinkable) posts to fit the window. */
 .cpp-scroll-window > * {
@@ -52,10 +42,6 @@
   max-height: none !important;
   height: auto !important;
   overflow: visible !important;
-}
-
-.cpp-scroll-window.cpp-expanded::after {
-  display: none !important;
 }
 
 .cpp-ui.cpp-controls {
@@ -111,14 +97,10 @@
   transform: rotate(180deg);
 }
 
-/* Reversed sort order: keeps layout column and puts tail space at bottom */
+/* Reversed sort order: keeps layout column */
 .cpp-scroll-window.cpp-reversed {
   display: flex !important;
   flex-direction: column !important;
-}
-
-.cpp-scroll-window.cpp-reversed::after {
-  order: 999999 !important;
 }
 
 /* Sort toggle button at top next to "Collapse all" */
@@ -165,40 +147,13 @@
   flex: none;
 }
 
-/* Horizontal drop indicator line when dragging posts */
-.cpp-drop-indicator {
-  position: fixed;
-  display: none;
-  align-items: center;
-  pointer-events: none;
-  height: 4px;
-  z-index: 99999;
-  transition: top 0.06s ease-out;
-}
-
-.cpp-drop-line {
-  flex: 1;
-  height: 3px;
-  background: #1a73e8; /* Google Classroom Blue */
-  border-radius: 999px;
-  box-shadow: 0 0 6px rgba(26, 115, 232, 0.6);
-}
-
-.cpp-drop-dot-left,
-.cpp-drop-dot-right {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #1a73e8;
-  flex: none;
-  box-shadow: 0 0 4px rgba(26, 115, 232, 0.8);
-}
-
-
 /* Classroom++ — Visually hide Google Classroom's native "View more" button
  * We keep it rendered at 0 opacity with 1px clipped off-screen so Google's
  * Wiz controllers mount and accept our automated click, while remaining
- * completely invisible to the user and taking zero space in the layout. */
+ * completely invisible to the user and taking zero space in the layout.
+ * We avoid display:none so Google's controllers can complete batch fetches. */
+.Mvr5Ef,
+button[jsname="t6Kl7b"],
 button[aria-label*="View more" i],
 .cpp-native-view-more {
   position: absolute !important;
@@ -213,9 +168,18 @@ button[aria-label*="View more" i],
   clip-path: inset(50%) !important;
 }
 
-/* Once clicked and processed, collapse completely */
-button[data-cpp-clicked="true"],
-.cpp-hidden-view-more {
+/* While user is actively dragging posts, disable overscroll containment
+ * so items can be freely dragged across topic boundaries. */
+body.cpp-dragging-active .cpp-scroll-window {
+  overscroll-behavior: auto !important;
+  overflow-x: visible !important;
+}
+
+/* When Google Classroom collapses topics (or in collapsed accordion states), hide Classroom++ controls */
+.zq2w8b[style*="display: none"] ~ .cpp-ui,
+.zq2w8b[style*="display:none"] ~ .cpp-ui,
+.zq2w8b[hidden] ~ .cpp-ui,
+[data-topic-id]:has(button[aria-expanded="false"][jsname="ix0Hvc"]) .cpp-ui {
   display: none !important;
 }
 

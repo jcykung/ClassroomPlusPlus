@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Changelog - Classroom++</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --primary: #16803c;
+      --primary-hover: #137333;
+      --success: #10b981;
+      --bg: #f8fafc;
+      --text: #1e293b;
+      --text-light: #64748b;
+      --card-bg: rgba(255, 255, 255, 0.95);
+      --border: #e2e8f0;
+    }
+
+    body {
+      font-family:
+        "Inter",
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        Roboto,
+        sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 40px 16px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      min-height: 100vh;
+      box-sizing: border-box;
+    }
+
+    .container {
+      max-width: 680px;
+      width: 100%;
+      background: var(--card-bg);
+      padding: 40px;
+      border-radius: 24px;
+      box-shadow:
+        0 20px 25px -5px rgba(0, 0, 0, 0.05),
+        0 10px 10px -5px rgba(0, 0, 0, 0.02);
+      text-align: center;
+      transform: translateY(20px);
+      opacity: 0;
+      animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    @keyframes fadeIn {
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+    .logo {
+      width: 80px;
+      height: 80px;
+      margin-bottom: 16px;
+      border-radius: 16px;
+      filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.08));
+    }
+
+    h1 {
+      font-size: 32px;
+      font-weight: 800;
+      margin: 0 0 4px 0;
+      background: linear-gradient(135deg, #16803c 0%, #0d5426 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .subtitle {
+      font-size: 15px;
+      color: var(--text-light);
+      margin-bottom: 32px;
+      font-weight: 500;
+    }
+
+    /* Timeline styling */
+    .timeline {
+      position: relative;
+      margin: 36px 0;
+      padding: 0;
+      list-style: none;
+      text-align: left;
+    }
+
+    .timeline::before {
+      content: "";
+      position: absolute;
+      top: 8px;
+      bottom: 8px;
+      left: 18px;
+      width: 2px;
+      background: #e2e8f0;
+    }
+
+    .timeline-item {
+      position: relative;
+      padding-left: 50px;
+      margin-bottom: 36px;
+    }
+
+    .timeline-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .timeline-marker {
+      position: absolute;
+      top: 4px;
+      left: 9px;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #fff;
+      border: 3px solid var(--primary);
+      box-shadow: 0 0 0 4px #e8f5e9;
+      box-sizing: border-box;
+    }
+
+    .timeline-header {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
+    .version-title {
+      font-size: 19px;
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+    }
+
+    .version-date {
+      font-size: 13px;
+      color: var(--text-light);
+      font-weight: 500;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .badge-latest {
+      background: #e8f5e9;
+      color: #16803c;
+    }
+
+    .badge-tag {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-right: 6px;
+      font-weight: 600;
+      vertical-align: middle;
+    }
+    .tag-new { background: #dcfce7; color: #15803d; }
+    .tag-fix { background: #fee2e2; color: #b91c1c; }
+    .tag-improve { background: #e0f2fe; color: #0369a1; }
+
+    .change-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .change-item {
+      position: relative;
+      font-size: 14px;
+      line-height: 1.6;
+      color: #334155;
+      margin-bottom: 8px;
+    }
+
+    .back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background-color: var(--primary);
+      color: white;
+      padding: 12px 24px;
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: 12px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+      margin-top: 16px;
+    }
+
+    .back-btn:hover {
+      background-color: var(--primary-hover);
+      transform: translateY(-1px);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <img src="icons/icon128.png" alt="Classroom++ Logo" class="logo" />
+    <h1>Classroom++ Changelog</h1>
+    <div class="subtitle">What's new and improved in Classroom++</div>
+
+    <ul class="timeline">
+      <!-- v0.2.0 -->
+      <li class="timeline-item">
+        <div class="timeline-marker"></div>
+        <div class="timeline-header">
+          <h2 class="version-title">v0.2.0</h2>
+          <span class="version-date">October 2026</span>
+          <span class="badge badge-latest">Current</span>
+        </div>
+        <ul class="change-list">
+          <li class="change-item">
+            <span class="badge-tag tag-new">NEW</span><strong>Chalkboard Logo:</strong> Brand new icon inspired by Google Classroom with a green chalkboard, warm wood frame, and chalk "++".
+          </li>
+          <li class="change-item">
+            <span class="badge-tag tag-new">NEW</span><strong>Settings Sync:</strong> Settings now automatically synchronize across all of your browsers and devices via Chrome Sync storage.
+          </li>
+          <li class="change-item">
+            <span class="badge-tag tag-new">NEW</span><strong>Extension Modal &amp; Onboarding:</strong> Full popup settings menu from the browser toolbar, welcome tour, and changelog.
+          </li>
+          <li class="change-item">
+            <span class="badge-tag tag-fix">FIX</span><strong>Scroll Gap Elimination:</strong> Removed the trailing blank space at the bottom of topic scroll areas. Scrolling now cleanly stops flush with the final post.
+          </li>
+          <li class="change-item">
+            <span class="badge-tag tag-fix">FIX</span><strong>Loop Glitch Resolved:</strong> Completely resolved the infinite expanding/collapsing loop on long topics like Wednesday Write.
+          </li>
+          <li class="change-item">
+            <span class="badge-tag tag-improve">IMPROVE</span><strong>Clean Drag-and-Drop:</strong> Removed unnecessary line feedback when dragging; drag controller isolated for smooth manual post reordering.
+          </li>
+        </ul>
+      </li>
+
+      <!-- v0.1.1 -->
+      <li class="timeline-item">
+        <div class="timeline-marker"></div>
+        <div class="timeline-header">
+          <h2 class="version-title">v0.1.1</h2>
+          <span class="version-date">October 2026</span>
+        </div>
+        <ul class="change-list">
+          <li class="change-item">
+            <span class="badge-tag tag-improve">IMPROVE</span><strong>Smart Boundary Alignment:</strong> Improved alignment logic to place the latest published post in the center, next to upcoming drafts.
+          </li>
+          <li class="change-item">
+            <span class="badge-tag tag-fix">FIX</span><strong>Header Menu Immunity:</strong> Protected kebab and dropdown menus from being mistaken for post lists.
+          </li>
+          <li class="change-item">
+            <span class="badge-tag tag-fix">FIX</span><strong>Create Button Flash:</strong> Removed synthetic focus calls that caused the "+ Create" button to flash on page load.
+          </li>
+        </ul>
+      </li>
+
+      <!-- v0.1.0 -->
+      <li class="timeline-item">
+        <div class="timeline-marker"></div>
+        <div class="timeline-header">
+          <h2 class="version-title">v0.1.0</h2>
+          <span class="version-date">October 2026</span>
+        </div>
+        <ul class="change-list">
+          <li class="change-item">
+            <span class="badge-tag tag-new">NEW</span><strong>5-Post Topic Window:</strong> Automatically caps topic sections to 5 visible posts with scroll and "View all" toggle.
+          </li>
+          <li class="change-item">
+            <span class="badge-tag tag-new">NEW</span><strong>Reverse Order:</strong> Added "Reverse order" button next to Google's "Collapse all" to sort posts in reverse.
+          </li>
+        </ul>
+      </li>
+    </ul>
+
+    <a href="onboarding.html" class="back-btn" id="welcomeBtn">View Welcome Screen</a>
+  </div>
+
+  <script src="changelog.js"></script>
+</body>
+</html>
+

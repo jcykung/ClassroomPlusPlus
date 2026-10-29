@@ -49,6 +49,30 @@
       <span jsname="V67aGc" class="mUIrbf-vQzf8d" aria-hidden="true">View more</span>
     </button>
   </section>
+  <section id="topic-7" data-topic-id="877248554777">
+    <h2>Topic Seven (All Drafts)</h2>
+    <div class="posts" id="list-7" role="list"></div>
+  </section>
+  <div id="topic-8" class="jHgkif" data-topic-id="877248554888">
+    <div class="jLMcgc" data-topic-id="877248554888">
+      <h2>Topic Eight (With Dropdown Menu)</h2>
+      <div data-topic-id="877248554888">
+        <ul class="aqdrmf-rymPhb" role="menu">
+          <li role="menuitem">Rename</li>
+          <li role="menuitem">Delete</li>
+          <li role="menuitem">Copy link</li>
+          <li role="menuitem">Move up</li>
+          <li role="menuitem">Move down</li>
+          <li role="menuitem">Help</li>
+        </ul>
+      </div>
+    </div>
+    <div class="zq2w8b">
+      <div jscontroller="CJc2td" data-drag-list-group-key="2">
+        <ol class="Xzp3fc posts" id="list-8" jsname="bN97Pc"></ol>
+      </div>
+    </div>
+  </div>
 </div>
 <aside role="complementary">
   <h2>To-do</h2>
@@ -106,6 +130,11 @@ fill('list-3', 3, false);
 fill('list-4', 7, true);
 fill('list-5', 9, false);
 fill('sidebar', 8, false);
+
+// list-7 has 8 draft posts (all drafts, 0 published).
+fill('list-7', 8, false, 0);
+// list-8 has 6 published posts inside a native Google drag controller CJc2td.
+fill('list-8', 6, false);
 
 // list-6 simulates Google Classroom's truncated list:
 // Initially only 3 posts are visible, with Google's native "View more" button.
@@ -191,11 +220,11 @@ if (gBtn) {
     ok('list-2 enhanced', list2.classList.contains('cpp-scroll-window'));
     const latest2 = api.findLatestPostIndex(Array.from(list2.children));
     ok('list-2 latest post is index 11', latest2 === 11, `got index ${latest2}`);
-    // Latest index 11 is 3rd of 5 -> index 9 is at top
-    const post9Top = list2.children[9].offsetTop;
-    ok('list-2 aligned with tail space (post 9 at top)',
-      approx(list2.scrollTop, post9Top, 3),
-      `scrollTop=${list2.scrollTop}, post9.offsetTop=${post9Top}`);
+    // Latest index 11 is 3rd of 5 -> index 9 target, but without tail space gap it stops flush at bottom
+    const maxScroll2 = list2.scrollHeight - list2.clientHeight;
+    ok('list-2 stops flush at bottom without gap',
+      approx(list2.scrollTop, maxScroll2, 3),
+      `scrollTop=${list2.scrollTop}, maxScroll=${maxScroll2}`);
     const btn2 = list2.nextElementSibling && list2.nextElementSibling.querySelector('.cpp-toggle');
     const labelSpan2 = btn2 && btn2.querySelector('.cpp-toggle-text');
     ok('list-2 toggle label is View all (12)',
@@ -257,9 +286,48 @@ if (gBtn) {
     ok('list-1 cpp-reversed class removed', !list1.classList.contains('cpp-reversed'));
     ok('list-1 item order cleared', !list1.children[0].style.order);
 
-    // 10. Drag & Drop indicator element exists (Requirement 3)
+    // 10. Drag & Drop: indicator lines removed per user preference
     const dropIndicator = document.querySelector('.cpp-drop-indicator');
-    ok('drop indicator element exists in DOM', !!dropIndicator);
+    ok('drop indicator line removed from DOM', !dropIndicator);
+
+    // 11. All-drafts topic (Requirement 2): scrolls to beginning, no tail space
+    const list7 = document.getElementById('list-7');
+    ok('list-7 enhanced', list7.classList.contains('cpp-scroll-window'));
+    ok('list-7 all drafts latest post is -1', api.findLatestPostIndex(Array.from(list7.children)) === -1);
+    ok('list-7 scrolled to beginning (scrollTop 0)', list7.scrollTop === 0);
+    ok('list-7 has no tail space', !list7.style.getPropertyValue('--cpp-tail-space'));
+    const btn7 = list7.nextElementSibling && list7.nextElementSibling.querySelector('.cpp-toggle');
+    ok('list-7 toggle label is View all (8)',
+      !!btn7 && btn7.querySelector('.cpp-toggle-text').textContent === 'View all (8)');
+
+    // 12. Dropdown menu immunity & Toggle placement (Requirement 1 & 4)
+    const list8 = document.getElementById('list-8');
+    ok('list-8 enhanced', list8.classList.contains('cpp-scroll-window'));
+    const topic8Menu = document.querySelector('#topic-8 ul.aqdrmf-rymPhb');
+    ok('topic-8 popup menu not enhanced as a post list', !topic8Menu.classList.contains('cpp-scroll-window'));
+    ok('topic-8 popup menu has no toggle button injected into header', !document.querySelector('#topic-8 .jLMcgc .cpp-ui'));
+    const dragCtrl = list8.closest('[jscontroller="CJc2td"], [data-drag-list-group-key]');
+    const toggleAfter = (list8.nextElementSibling && list8.nextElementSibling.classList.contains('cpp-ui')) ||
+      (dragCtrl && dragCtrl.nextElementSibling && dragCtrl.nextElementSibling.classList.contains('cpp-ui'));
+    ok('topic-8 toggle exists after post list or drag controller', !!toggleAfter);
+
+    // 13. Drag event does not create indicator
+    const firstItem = list1.children[0];
+    const secondItem = list1.children[1];
+    const sRect = secondItem.getBoundingClientRect();
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: sRect.left + 20, clientY: sRect.top + 10 }));
+    ok('no drop indicator rendered on drag mousemove', !document.querySelector('.cpp-drop-indicator'));
+
+    // 14. Hidden View more buttons inside display:none containers are ignored
+    const hiddenContainer = document.createElement('div');
+    hiddenContainer.style.display = 'none';
+    const fakeBtn = document.createElement('button');
+    fakeBtn.setAttribute('aria-label', 'View more posts');
+    fakeBtn.setAttribute('jsname', 't6Kl7b');
+    hiddenContainer.appendChild(fakeBtn);
+    document.body.appendChild(hiddenContainer);
+    ok('hidden View more button not clicked', !fakeBtn.dataset.cppClicked);
+    hiddenContainer.remove();
 
     const failed = lines.filter((l) => l.startsWith('FAIL')).length;
     lines.push(failed === 0 ? 'ALL TESTS PASSED' : `${failed} TEST(S) FAILED`);

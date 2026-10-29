@@ -19,7 +19,7 @@
     /** Topics with this many posts or fewer are left untouched. */
     minPostsToWindow: 6,
     /** Set true for console logging while debugging selectors. */
-    debug: true,
+    debug: false,
   };
 
   const CLASS = {
@@ -34,13 +34,12 @@
 
   const VARS = {
     height: '--cpp-window-height',
-    tail: '--cpp-tail-space',
   };
 
   const MAIN_SELECTOR = '[role="main"], main, #yDmH0d, body';
   const ROLE_ITEM_SELECTOR = 'li[data-stream-item-id], [data-stream-item-id], [role="listitem"]';
   const SKIP_ANCESTOR_SELECTOR =
-    'aside, nav, [role="navigation"], [role="complementary"], [role="dialog"], [aria-modal="true"]';
+    'aside, nav, [role="navigation"], [role="complementary"], [role="dialog"], [aria-modal="true"], [role="menu"], [role="listbox"], [role="combobox"], .aqdrmf-rymPhb, [jscontroller="bZ0mod"], [data-is-select-menu="true"]';
 
   // Work item links: match assignment, material, question, post links in Google Classroom
   const WORK_LINK_RE = /(?:\/c\/|\/w\/|\/u\/\d+\/c\/|\/u\/\d+\/w\/)[^/]+\/(?:a|m|q|p)\/[^/]+/;
@@ -68,6 +67,62 @@
       return false;
     }
   })();
+
+  function saveSettings() {
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.sync) {
+      chrome.storage.sync.set({ isReversed });
+    }
+    try {
+      localStorage.setItem(SORT_STORAGE_KEY, String(isReversed));
+    } catch (_) {}
+  }
+
+  function loadInitialSettings() {
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.sync) {
+      chrome.storage.sync.get(['isReversed'], (result) => {
+        if (result && typeof result.isReversed === 'boolean') {
+          if (result.isReversed !== isReversed) {
+            isReversed = result.isReversed;
+            try {
+              localStorage.setItem(SORT_STORAGE_KEY, String(isReversed));
+            } catch (_) {}
+            const btn = document.getElementById('cpp-sort-toggle');
+            if (btn) {
+              btn.classList.toggle('cpp-sort-active', isReversed);
+              const textSpan = btn.querySelector('.cpp-sort-text');
+              if (textSpan) {
+                textSpan.textContent = isReversed ? 'Reverse order: ON' : 'Reverse order';
+              }
+            }
+            applySortOrderToAll();
+          }
+        }
+      });
+    }
+  }
+
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'sync' && changes.isReversed) {
+        const newVal = changes.isReversed.newValue === true;
+        if (newVal !== isReversed) {
+          isReversed = newVal;
+          try {
+            localStorage.setItem(SORT_STORAGE_KEY, String(isReversed));
+          } catch (_) {}
+          const btn = document.getElementById('cpp-sort-toggle');
+          if (btn) {
+            btn.classList.toggle('cpp-sort-active', isReversed);
+            const textSpan = btn.querySelector('.cpp-sort-text');
+            if (textSpan) {
+              textSpan.textContent = isReversed ? 'Reverse order: ON' : 'Reverse order';
+            }
+          }
+          applySortOrderToAll();
+        }
+      }
+    });
+  }
 
   const log = (...args) => {
     if (CONFIG.debug) console.log('[Classroom++]', ...args);
@@ -137,9 +192,11 @@
    * Find the index of the latest published post (not drafts).
    * In a topic list:
    * Earlier items -> Latest published post -> Upcoming drafts to be edited next.
+   * If there are no published posts (all drafts), returns -1 so the topic
+   * scrolls to the beginning (scrollTop = 0) to start editing.
    */
   function findLatestPostIndex(items) {
-    if (!items || items.length === 0) return 0;
+    if (!items || items.length === 0) return -1;
 
     const publishedIndices = [];
     const draftIndices = [];
@@ -151,25 +208,27 @@
       }
     }
 
-    if (publishedIndices.length === 0) return 0;
+    // If there are no published posts (all drafts), return -1
+    // to scroll directly to the beginning (scrollTop = 0)
+    if (publishedIndices.length === 0) return -1;
 
-    // If there are drafts, determine if drafts are at the top or bottom
+    // If there are drafts, check their placement relative to published posts
     if (draftIndices.length > 0) {
       const firstDraft = draftIndices[0];
-      const lastDraft = draftIndices[draftIndices.length - 1];
 
-      // If drafts are at the top (before all published posts):
-      // The latest published post is the first published post after the drafts
-      if (lastDraft < publishedIndices[0]) {
+      // If drafts are at the top (index 0), e.g. upcoming curriculum planning drafts:
+      // The latest published post is the first published post after these top drafts
+      if (firstDraft === 0) {
         return publishedIndices[0];
       }
 
-      // If drafts are at the bottom (or after published posts):
+      // If drafts are at the bottom (newly created draft posts placed at bottom by default):
       // The latest published post is the last published post before the drafts
       const beforeDrafts = publishedIndices.filter((idx) => idx < firstDraft);
       if (beforeDrafts.length > 0) {
         return beforeDrafts[beforeDrafts.length - 1];
       }
+      return publishedIndices[0];
     }
 
     // Default / All published posts:
@@ -180,9 +239,16 @@
   /**
    * Align the scroll window so that the target post is the 3rd post of 5 visible posts
    * (aligned to the middle of the scroll). Supports both standard and reversed sort orders.
+   * If targetIndex is -1 (e.g. topic with all drafts), scrolls directly to the top.
    */
   function alignLatestPostToMiddle(container, items, targetIndex, reversed = false) {
     if (!items || items.length === 0) return;
+
+    // If no published posts (all drafts, targetIndex < 0), scroll to the very top
+    if (targetIndex < 0) {
+      container.scrollTop = 0;
+      return;
+    }
 
     // The 3rd post of 5 visible posts is items[targetIndex].
     // In normal order, top visible item is targetIndex - 2.
@@ -202,17 +268,23 @@
 
     const applyScroll = () => {
       if (!container.isConnected || !topItem.isConnected) return;
-      const cRect = container.getBoundingClientRect();
-      const iRect = topItem.getBoundingClientRect();
-      const delta = iRect.top - cRect.top;
-      container.scrollTop = Math.max(0, Math.round(container.scrollTop + delta));
+      if (topItem.offsetParent === container) {
+        container.scrollTop = topItem.offsetTop;
+      } else {
+        const cRect = container.getBoundingClientRect();
+        const iRect = topItem.getBoundingClientRect();
+        if (cRect.height === 0 || iRect.height === 0) return;
+        const delta = iRect.top - cRect.top;
+        container.scrollTop = Math.max(0, Math.round(container.scrollTop + delta));
+      }
     };
 
     applyScroll();
     requestAnimationFrame(() => {
       applyScroll();
       setTimeout(applyScroll, 80);
-      setTimeout(applyScroll, 220);
+      setTimeout(applyScroll, 200);
+      setTimeout(applyScroll, 500);
     });
   }
 
@@ -231,9 +303,9 @@
 
   /**
    * Multi-strategy collection of Topic containers and their post lists:
-   * Strategy 1 (Native Classroom): [data-topic-id] sections and their <ol>/<ul> list of posts.
+   * Strategy 1 (Native Classroom): Outermost [data-topic-id] sections and their <ol> post lists.
    * Strategy 2 (Heading-based): <h2> topic headings and their associated post lists.
-   * Strategy 3 (Role/Tag): <ol>, <ul>, or [role="list"] with [data-stream-item-id] or [role="listitem"].
+   * Strategy 3 (Role/Tag): <ol> or [role="list"] with [data-stream-item-id] or [role="listitem"].
    * Strategy 4 (Fallback): Work links matching assignment paths.
    */
   function collectGroups(main) {
@@ -241,31 +313,45 @@
     const seenContainers = new Set();
 
     // Strategy 1: Google Classroom native [data-topic-id]
-    const topicNodes = Array.from(main.querySelectorAll('[data-topic-id]')).filter(
-      (node) => !node.closest(SKIP_ANCESTOR_SELECTOR)
-    );
+    // Filter strictly to outermost topic containers only, excluding menus or nested elements
+    const topicNodes = Array.from(main.querySelectorAll('[data-topic-id]')).filter((node) => {
+      if (node.closest(SKIP_ANCESTOR_SELECTOR)) return false;
+      if (node.parentElement && node.parentElement.closest('[data-topic-id]')) return false;
+      return true;
+    });
 
     for (const topicNode of topicNodes) {
-      // Find the posts container: ol, ul, role="list", or the sibling following header
-      let list = topicNode.querySelector('ol, ul, [role="list"]');
+      // Find the posts container: ol[jsname="bN97Pc"], ol.Xzp3fc, or ol
+      let list = topicNode.querySelector('ol[jsname="bN97Pc"], ol.Xzp3fc, ol');
       if (!list) {
-        // Look for element right after the topic header (div[jsname="K3jAGe"])
-        const header = topicNode.querySelector('[jsname="K3jAGe"]') || topicNode.firstElementChild;
+        list = topicNode.querySelector('ol, [role="list"]:not([role="menu"]):not([role="listbox"])');
+      }
+      if (!list) {
+        // Look for element following the topic header
+        const header = topicNode.querySelector('[jsname="K3jAGe"], .jLMcgc') || topicNode.firstElementChild;
         if (header && header.nextElementSibling) {
-          list = header.nextElementSibling;
+          list = header.nextElementSibling.matches('ol, ul, [role="list"]')
+            ? header.nextElementSibling
+            : header.nextElementSibling.querySelector('ol, ul, [role="list"]');
         }
       }
 
       if (list && !seenContainers.has(list)) {
-        let items = Array.from(
-          list.querySelectorAll('li[data-stream-item-id], [data-stream-item-id], li, [role="listitem"]')
-        ).filter(
-          (item) => item.parentElement === list || item.closest('ol, ul, [role="list"]') === list
+        if (list.closest(SKIP_ANCESTOR_SELECTOR) || list.getAttribute('role') === 'menu') {
+          continue;
+        }
+
+        // Only count direct LI children if it's an OL/UL, avoiding duplicate child tags
+        let items = Array.from(list.children).filter(
+          (c) => (c.tagName === 'LI' || c.getAttribute('role') === 'listitem') && !c.classList.contains(CLASS.ui)
         );
 
         if (items.length === 0) {
           items = Array.from(list.children).filter(
-            (c) => !c.classList.contains(CLASS.ui) && c.getBoundingClientRect().height > 10
+            (c) =>
+              !c.classList.contains(CLASS.ui) &&
+              !c.classList.contains(CLASS.controls) &&
+              c.getBoundingClientRect().height > 10
           );
         }
 
@@ -287,18 +373,18 @@
         h2.parentElement;
       if (!topicSection || topicSection === main) continue;
 
-      let list = topicSection.querySelector('ol, ul, [role="list"]');
+      let list = topicSection.querySelector('ol[jsname="bN97Pc"], ol.Xzp3fc, ol');
       if (!list) {
         let sibling = (h2.closest('div') || h2).nextElementSibling;
         while (sibling) {
           if (
             sibling.matches &&
-            (sibling.matches('ol, ul, [role="list"]') ||
-              sibling.querySelector('li[data-stream-item-id], [data-stream-item-id], [role="listitem"]'))
+            (sibling.matches('ol, [role="list"]:not([role="menu"])') ||
+              sibling.querySelector('ol, [role="list"]:not([role="menu"])'))
           ) {
-            list = sibling.matches('ol, ul, [role="list"]')
+            list = sibling.matches('ol, [role="list"]')
               ? sibling
-              : (sibling.querySelector('ol, ul, [role="list"]') || sibling);
+              : sibling.querySelector('ol, [role="list"]');
             break;
           }
           sibling = sibling.nextElementSibling;
@@ -306,14 +392,17 @@
       }
 
       if (list && !seenContainers.has(list)) {
-        let items = Array.from(
-          list.querySelectorAll('li[data-stream-item-id], [data-stream-item-id], [role="listitem"]')
-        ).filter(
-          (item) => item.parentElement === list || item.closest('ol, ul, [role="list"]') === list
+        if (list.closest(SKIP_ANCESTOR_SELECTOR) || list.getAttribute('role') === 'menu') continue;
+
+        let items = Array.from(list.children).filter(
+          (c) => (c.tagName === 'LI' || c.getAttribute('role') === 'listitem') && !c.classList.contains(CLASS.ui)
         );
         if (items.length === 0) {
           items = Array.from(list.children).filter(
-            (c) => !c.classList.contains(CLASS.ui) && !c.classList.contains(CLASS.controls) && c.getBoundingClientRect().height > 10
+            (c) =>
+              !c.classList.contains(CLASS.ui) &&
+              !c.classList.contains(CLASS.controls) &&
+              c.getBoundingClientRect().height > 10
           );
         }
         if (items.length > 0) {
@@ -323,14 +412,16 @@
       }
     }
 
-    // Strategy 3: Any ol, ul, or [role="list"] containing items
-    const roleLists = Array.from(main.querySelectorAll('ol, ul, [role="list"]')).filter(
-      (l) => !seenContainers.has(l) && !l.closest(SKIP_ANCESTOR_SELECTOR)
+    // Strategy 3: Any ol or [role="list"] containing items (excluding menus)
+    const roleLists = Array.from(main.querySelectorAll('ol, [role="list"]')).filter(
+      (l) => !seenContainers.has(l) && !l.closest(SKIP_ANCESTOR_SELECTOR) && l.getAttribute('role') !== 'menu'
     );
     for (const list of roleLists) {
       const items = Array.from(list.children).filter(
         (child) =>
-          (child.matches && (child.matches('li, [data-stream-item-id], [role="listitem"]') || child.querySelector('[data-stream-item-id], [role="listitem"]'))) &&
+          (child.tagName === 'LI' ||
+            (child.matches && child.matches('[role="listitem"]')) ||
+            child.querySelector('[role="listitem"]')) &&
           !child.classList.contains(CLASS.ui)
       );
       if (items.length >= 2) {
@@ -404,8 +495,13 @@
   /** Measure the collapsed window height so 5 posts fit exactly. */
   function measureWindow(items) {
     const sample = items.slice(0, CONFIG.visiblePosts);
-    const heights = sample.map((el) => el.getBoundingClientRect().height);
-    if (heights.some((h) => !(h > 0))) return null;
+    let heights = sample.map((el) => el.getBoundingClientRect().height);
+    const validHeights = heights.filter((h) => h > 0);
+    const fallbackHeight = validHeights.length > 0
+      ? validHeights.reduce((sum, h) => sum + h, 0) / validHeights.length
+      : 66;
+
+    heights = heights.map((h) => (h > 0 ? h : fallbackHeight));
     const gap = gapBetween(items);
     const contentHeight = heights.reduce((sum, h) => sum + h, 0) + gap * (heights.length - 1);
     if (!(contentHeight > 40)) return null;
@@ -414,6 +510,18 @@
       avgHeight: contentHeight / heights.length,
       gap,
     };
+  }
+
+  function getControlsAnchor(container) {
+    const dragCtrl = container.closest('[jscontroller="CJc2td"], [data-drag-list-group-key]');
+    if (dragCtrl) {
+      const next = dragCtrl.nextElementSibling;
+      if (next && next.classList.contains('Mvr5Ef')) {
+        return next;
+      }
+      return dragCtrl;
+    }
+    return container;
   }
 
   function ensureControls(container, st) {
@@ -443,8 +551,9 @@
       st.button = button;
     }
 
-    if (!ui.isConnected || ui.previousElementSibling !== container) {
-      container.insertAdjacentElement('afterend', ui);
+    const anchor = getControlsAnchor(container);
+    if (!ui.isConnected || ui.previousElementSibling !== anchor) {
+      anchor.insertAdjacentElement('afterend', ui);
     }
 
     // Toggle label: "View all" to expand, "View fewer" to collapse
@@ -482,11 +591,6 @@
 
   function applyWindow(container, items) {
     const rect = container.getBoundingClientRect();
-    if (rect.width === 0) {
-      log('skipping hidden container');
-      return;
-    }
-
     let st = stateByContainer.get(container);
     if (!st) {
       st = {
@@ -499,6 +603,23 @@
       };
       stateByContainer.set(container, st);
     }
+
+    // Check if topic is collapsed by Google's native accordion or hidden
+    const topicNode = container.closest('[data-topic-id]');
+    const accordionBtn = topicNode ? topicNode.querySelector('button[jsname="ix0Hvc"]') : null;
+    const isTopicCollapsed =
+      (accordionBtn && accordionBtn.getAttribute('aria-expanded') === 'false') ||
+      rect.width === 0 ||
+      rect.height === 0;
+
+    if (isTopicCollapsed) {
+      if (st.ui) st.ui.style.display = 'none';
+      return;
+    }
+    if (st.ui && st.ui.style.display === 'none') {
+      st.ui.style.display = '';
+    }
+
     const countChanged = st.itemCount !== items.length;
     st.items = items;
     st.itemCount = items.length;
@@ -514,23 +635,19 @@
     container.classList.toggle(CLASS.expanded, st.expanded);
     container.style.setProperty(VARS.height, `${metrics.windowHeight}px`);
 
-    // Tail space: allows the latest post near the end of the topic
-    // to sit comfortably at the 3rd position (middle of 5)
-    const tail = Math.round(metrics.avgHeight * 2.2 + metrics.gap * 2);
-    container.style.setProperty(VARS.tail, `${tail}px`);
+    const latestIndex = findLatestPostIndex(items);
 
     // Apply sort order (normal or reversed)
     applySortOrderToContainer(container, items, isReversed);
 
-    // Setup drag auto-scroll and horizontal drop indicators
+    // Setup drag auto-scroll
     setupDragAndDrop(container);
 
     ensureControls(container, st);
 
     if (st.expanded) return;
 
-    if (!st.centered) {
-      const latestIndex = findLatestPostIndex(items);
+    if (!st.centered || countChanged) {
       alignLatestPostToMiddle(container, items, latestIndex, isReversed);
       st.centered = true;
     } else {
@@ -540,49 +657,167 @@
 
   // --- Drag & Drop Enhancements ---
 
-  let activeDragContainer = null;
-  let dragScrollSpeed = 0;
-  let dragAutoScrollTimer = null;
-  let dropIndicator = null;
+  let isDragging = false;
+  let potentialDrag = null;
+  let activeDragScrollSpeed = 0;
+  let activeDragScrollTimer = null;
+  let activeScrollWindow = null;
+  let windowScrollSpeed = 0;
 
-  function getDropIndicator() {
-    if (!dropIndicator || !dropIndicator.isConnected) {
-      dropIndicator = document.createElement('div');
-      dropIndicator.className = 'cpp-drop-indicator';
-      dropIndicator.innerHTML = '<span class="cpp-drop-dot-left"></span><span class="cpp-drop-line"></span><span class="cpp-drop-dot-right"></span>';
-      document.body.appendChild(dropIndicator);
+  function startCombinedAutoScroll() {
+    if (!activeDragScrollTimer) {
+      const step = () => {
+        if (isDragging && (activeDragScrollSpeed !== 0 || windowScrollSpeed !== 0)) {
+          if (activeScrollWindow && activeDragScrollSpeed !== 0) {
+            activeScrollWindow.scrollTop += activeDragScrollSpeed;
+          }
+          if (windowScrollSpeed !== 0) {
+            window.scrollBy(0, windowScrollSpeed);
+          }
+          activeDragScrollTimer = requestAnimationFrame(step);
+        } else {
+          stopDragAutoScroll();
+        }
+      };
+      activeDragScrollTimer = requestAnimationFrame(step);
     }
-    return dropIndicator;
   }
 
-  function hideDropIndicator() {
-    if (dropIndicator) dropIndicator.style.display = 'none';
+  function stopDragAutoScroll() {
+    if (activeDragScrollTimer) {
+      cancelAnimationFrame(activeDragScrollTimer);
+      activeDragScrollTimer = null;
+    }
+    activeScrollWindow = null;
+    activeDragScrollSpeed = 0;
+    windowScrollSpeed = 0;
   }
 
-  function showDropIndicator(container, item, isBefore) {
-    const indicator = getDropIndicator();
-    const cRect = container.getBoundingClientRect();
-    const iRect = item.getBoundingClientRect();
+  function handleDragAutoScroll(x, y) {
+    // 1. Viewport top / bottom page-level scrolling (so user can drag across topics)
+    const vpHeight = window.innerHeight;
+    const vpTopZone = 60;
+    const vpBottomZone = vpHeight - 60;
 
-    const y = isBefore ? iRect.top : iRect.bottom;
-    if (y < cRect.top - 4 || y > cRect.bottom + 4) {
-      hideDropIndicator();
-      return;
+    let pageSpeed = 0;
+    if (y < vpTopZone && y >= 0) {
+      pageSpeed = -Math.round(Math.max(5, (vpTopZone - y) / 3));
+    } else if (y > vpBottomZone && y <= vpHeight) {
+      pageSpeed = Math.round(Math.max(5, (y - vpBottomZone) / 3));
     }
 
-    indicator.style.display = 'flex';
-    indicator.style.top = `${Math.round(y - 2)}px`;
-    indicator.style.left = `${Math.round(Math.max(cRect.left, iRect.left) + 8)}px`;
-    indicator.style.width = `${Math.round(Math.min(cRect.width, iRect.width) - 16)}px`;
+    // 2. Check if cursor is over any topic scroll window
+    let hoveredWindow = null;
+    const scrollWindows = document.querySelectorAll(`.${CLASS.window}`);
+    for (const win of scrollWindows) {
+      const rect = win.getBoundingClientRect();
+      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+        hoveredWindow = win;
+        break;
+      }
+    }
+
+    let topicSpeed = 0;
+    if (hoveredWindow) {
+      const r = hoveredWindow.getBoundingClientRect();
+      const topZone = r.top + 50;
+      const bottomZone = r.bottom - 50;
+
+      if (y < topZone) {
+        const intensity = Math.max(0.2, (topZone - y) / 50);
+        topicSpeed = -Math.round(intensity * 18);
+      } else if (y > bottomZone) {
+        const intensity = Math.max(0.2, (y - bottomZone) / 50);
+        topicSpeed = Math.round(intensity * 18);
+      }
+    }
+
+    if (pageSpeed !== 0 || topicSpeed !== 0) {
+      activeDragScrollSpeed = topicSpeed;
+      activeScrollWindow = hoveredWindow;
+      windowScrollSpeed = pageSpeed;
+      startCombinedAutoScroll();
+    } else {
+      stopDragAutoScroll();
+    }
+  }
+
+  function setupGlobalDragHandlers() {
+    if (window._cppGlobalDragAttached) return;
+    window._cppGlobalDragAttached = true;
+
+    // Track mousedown on post cards or drag handles (Google Classroom uses mousedown:RlITDf on div.jWCzBe)
+    document.addEventListener(
+      'mousedown',
+      (e) => {
+        if (e.button !== 0) return;
+        const target = e.target;
+        // Do not block post card itself (Google Classroom assigns role="button" to post rows)
+        if (target.closest('button, a, input, textarea, select, [role="menuitem"], .cpp-ui, [data-is-tooltip-wrapper="true"]')) {
+          return;
+        }
+
+        const item = target.closest('li[data-stream-item-id], [data-stream-item-id], li.tfGBod, [role="listitem"]');
+        if (item) {
+          potentialDrag = {
+            startX: e.clientX,
+            startY: e.clientY,
+            item,
+          };
+        }
+      },
+      true
+    );
+
+    document.addEventListener(
+      'mousemove',
+      (e) => {
+        if (!potentialDrag) return;
+
+        if (!isDragging) {
+          const dx = e.clientX - potentialDrag.startX;
+          const dy = e.clientY - potentialDrag.startY;
+          if (Math.hypot(dx, dy) > 5) {
+            isDragging = true;
+            document.body.classList.add('cpp-dragging-active');
+            log('Post drag started');
+          }
+        }
+
+        if (isDragging) {
+          handleDragAutoScroll(e.clientX, e.clientY);
+        }
+      },
+      true
+    );
+
+    const finishDrag = () => {
+      if (!potentialDrag && !isDragging) return;
+      potentialDrag = null;
+
+      if (isDragging) {
+        log('Post drag ended');
+        stopDragAutoScroll();
+
+        // Let Google Classroom's drop handler and DOM mutation settle before re-scanning
+        setTimeout(() => {
+          isDragging = false;
+          document.body.classList.remove('cpp-dragging-active');
+          scheduleScan(80);
+        }, 300);
+      }
+    };
+
+    document.addEventListener('mouseup', finishDrag, true);
+    document.addEventListener('pointerup', finishDrag, true);
+    document.addEventListener('dragend', finishDrag, true);
   }
 
   function setupDragAndDrop(container) {
     if (container._cppDragAttached) return;
     container._cppDragAttached = true;
 
-    // Eagerly create the drop indicator so it's in the DOM
-    getDropIndicator();
-
+    // Standard HTML5 drag support (fallback/fixtures)
     container.addEventListener('dragover', (e) => {
       const rect = container.getBoundingClientRect();
       const y = e.clientY;
@@ -591,66 +826,29 @@
 
       if (y < topZone) {
         const intensity = Math.max(0.2, (topZone - y) / 55);
-        dragScrollSpeed = -Math.round(intensity * 18);
-        startDragAutoScroll(container);
+        activeDragScrollSpeed = -Math.round(intensity * 18);
+        activeScrollWindow = container;
+        startCombinedAutoScroll();
       } else if (y > bottomZone) {
         const intensity = Math.max(0.2, (y - bottomZone) / 55);
-        dragScrollSpeed = Math.round(intensity * 18);
-        startDragAutoScroll(container);
+        activeDragScrollSpeed = Math.round(intensity * 18);
+        activeScrollWindow = container;
+        startCombinedAutoScroll();
       } else {
         stopDragAutoScroll();
-      }
-
-      // Show drop indicator line above or below hovered post
-      const item = e.target.closest('li[data-stream-item-id], [data-stream-item-id], [role="listitem"]');
-      if (item && container.contains(item)) {
-        const iRect = item.getBoundingClientRect();
-        const isBefore = (e.clientY - iRect.top) < (iRect.height / 2);
-        showDropIndicator(container, item, isBefore);
       }
     });
 
     container.addEventListener('dragleave', (e) => {
       if (!container.contains(e.relatedTarget)) {
         stopDragAutoScroll();
-        hideDropIndicator();
       }
     });
 
     container.addEventListener('drop', () => {
       stopDragAutoScroll();
-      hideDropIndicator();
     });
   }
-
-  function startDragAutoScroll(container) {
-    activeDragContainer = container;
-    if (!dragAutoScrollTimer) {
-      const step = () => {
-        if (activeDragContainer && dragScrollSpeed !== 0) {
-          activeDragContainer.scrollTop += dragScrollSpeed;
-          dragAutoScrollTimer = requestAnimationFrame(step);
-        } else {
-          stopDragAutoScroll();
-        }
-      };
-      dragAutoScrollTimer = requestAnimationFrame(step);
-    }
-  }
-
-  function stopDragAutoScroll() {
-    if (dragAutoScrollTimer) {
-      cancelAnimationFrame(dragAutoScrollTimer);
-      dragAutoScrollTimer = null;
-    }
-    activeDragContainer = null;
-    dragScrollSpeed = 0;
-  }
-
-  document.addEventListener('dragend', () => {
-    stopDragAutoScroll();
-    hideDropIndicator();
-  });
 
   // --- Sort Order (Reverse All Topics) ---
 
@@ -702,8 +900,12 @@
       });
     }
 
-    if (btn.nextElementSibling !== collapseBtn) {
-      collapseBtn.parentNode.insertBefore(btn, collapseBtn);
+    const insertTarget =
+      collapseBtn.closest('[data-is-tooltip-wrapper="true"]') ||
+      collapseBtn.closest('[data-is-touch-wrapper="true"]') ||
+      collapseBtn;
+    if (btn.nextElementSibling !== insertTarget) {
+      insertTarget.parentNode.insertBefore(btn, insertTarget);
     }
 
     btn.classList.toggle('cpp-sort-active', isReversed);
@@ -718,6 +920,10 @@
     try {
       localStorage.setItem(SORT_STORAGE_KEY, String(isReversed));
     } catch (_) {}
+
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.sync) {
+      chrome.storage.sync.set({ isReversed });
+    }
 
     const btn = document.getElementById('cpp-sort-toggle');
     if (btn) {
@@ -768,6 +974,11 @@
     }
   }
 
+  const expansionAttemptsByTopic = new Map();
+  // Maximum View more clicks per topic. Google loads ~10 posts per click.
+  // A topic with 50+ posts needs 4+ clicks. Set high enough to cover any real classroom.
+  const MAX_EXPANSION_ATTEMPTS = 30;
+
   /**
    * Inject CSS to hide Google Classroom's native "View more" links.
    * We replace them with our own 5-post scroll window + "View all" toggle.
@@ -791,10 +1002,6 @@
         clip: rect(0, 0, 0, 0) !important;
         clip-path: inset(50%) !important;
       }
-      button[data-cpp-clicked="true"],
-      .cpp-hidden-view-more {
-        display: none !important;
-      }
     `;
     (document.head || document.documentElement).appendChild(style);
     viewMoreCssInjected = true;
@@ -807,6 +1014,17 @@
    */
   function isViewMoreButton(btn) {
     if (!btn || !btn.isConnected) return false;
+
+    // Must not be disabled
+    if (btn.hasAttribute('disabled') || btn.getAttribute('aria-disabled') === 'true') {
+      return false;
+    }
+
+    // Must not be inside a container that Google Classroom explicitly hid
+    const hiddenAncestor = btn.closest('[style*="display: none"], [style*="display:none"], [hidden]');
+    if (hiddenAncestor) {
+      return false;
+    }
 
     // Check aria-label specifically for "View more"
     const ariaLabel = (btn.getAttribute('aria-label') || '').trim().toLowerCase();
@@ -831,31 +1049,15 @@
   }
 
   /**
-   * Safely dispatch pointer, mouse, and click events to trigger Google Wiz/Closure actions.
+   * Safely dispatch click event to trigger Google Wiz/Closure actions without stealing focus.
    */
   function triggerClick(el) {
     if (!el) return;
-
-    try {
-      if (typeof el.focus === 'function') el.focus();
-    } catch (_) {}
-
-    const span = el.querySelector('span[jsname="V67aGc"]') || el;
-
-    const opts = { bubbles: true, cancelable: true, view: window, composed: true };
-    for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup']) {
-      try {
-        const isPointer = type.startsWith('pointer');
-        const EventClass = isPointer ? PointerEvent : MouseEvent;
-        span.dispatchEvent(new EventClass(type, opts));
-      } catch (_) {}
-    }
-
     try {
       if (typeof el.click === 'function') {
         el.click();
       } else {
-        el.dispatchEvent(new MouseEvent('click', opts));
+        el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
       }
     } catch (_) {}
   }
@@ -877,8 +1079,13 @@
     for (const el of candidates) {
       const btn = el.closest('button, [role="button"]') || el;
       if (!seen.has(btn) && !btn.dataset.cppClicked && isViewMoreButton(btn)) {
-        seen.add(btn);
-        results.push(btn);
+        const topicNode = btn.closest('[data-topic-id]');
+        const topicId = topicNode ? topicNode.dataset.topicId || topicNode.getAttribute('data-topic-id') : 'unknown';
+        const attempts = expansionAttemptsByTopic.get(topicId) || 0;
+        if (attempts < MAX_EXPANSION_ATTEMPTS) {
+          seen.add(btn);
+          results.push(btn);
+        }
       }
     }
 
@@ -886,8 +1093,13 @@
     const allButtons = document.querySelectorAll('button, [role="button"]');
     for (const btn of allButtons) {
       if (!seen.has(btn) && !btn.dataset.cppClicked && isViewMoreButton(btn)) {
-        seen.add(btn);
-        results.push(btn);
+        const topicNode = btn.closest('[data-topic-id]');
+        const topicId = topicNode ? topicNode.dataset.topicId || topicNode.getAttribute('data-topic-id') : 'unknown';
+        const attempts = expansionAttemptsByTopic.get(topicId) || 0;
+        if (attempts < MAX_EXPANSION_ATTEMPTS) {
+          seen.add(btn);
+          results.push(btn);
+        }
       }
     }
 
@@ -896,8 +1108,15 @@
 
   /**
    * Automatically expand all native "View more" buttons until all posts are revealed.
-   * Handles multi-batch loading for topics with many posts (e.g. 30+ posts).
-   * Uses fast dynamic polling so all hidden posts load almost instantaneously.
+   * Handles multi-batch loading for topics with many posts (e.g. 30+ posts per topic).
+   *
+   * Google loads posts in batches of 10. Each "View more" click triggers an XHR that
+   * appends 10 more posts to the topic's ol. For a topic with 40 posts, we need to
+   * click View more 3 times, waiting for each XHR to complete before the next button appears.
+   *
+   * The MutationObserver calls scheduleAutoExpansion() whenever new stream items or
+   * new View more buttons are added to the DOM, which covers the async XHR case.
+   * This function handles the eager initial pass with retries.
    */
   async function triggerAutoExpansion() {
     if (isExpanding) return;
@@ -909,37 +1128,39 @@
     injectViewMoreHidingCSS();
 
     try {
-      for (let round = 0; round < 10; round++) {
+      // Click all currently-visible View more buttons. More rounds may be triggered
+      // reactively by the MutationObserver as XHR responses arrive and new buttons appear.
+      for (let round = 0; round < 20; round++) {
         const buttons = findUnclickedViewMore();
         if (buttons.length === 0) break;
 
         log(`expanding ${buttons.length} native View more button(s) (round ${round + 1})`);
-
         for (const btn of buttons) {
           btn.dataset.cppClicked = 'true';
           btn.classList.add('cpp-native-view-more');
+          const topicNode = btn.closest('[data-topic-id]');
+          const topicId = topicNode ? topicNode.dataset.topicId || topicNode.getAttribute('data-topic-id') : 'unknown';
+          const attempts = expansionAttemptsByTopic.get(topicId) || 0;
+          expansionAttemptsByTopic.set(topicId, attempts + 1);
+
           triggerClick(btn);
         }
 
-        // Fast dynamic polling: Classroom responds in 50-150ms per batch.
-        // Poll every 40ms up to 450ms for new buttons to appear or items to mount.
-        const start = Date.now();
-        while (Date.now() - start < 450) {
-          await new Promise((r) => setTimeout(r, 40));
-          if (findUnclickedViewMore().length > 0) break;
-        }
+        // Wait for XHR responses to arrive and new LI posts to be appended.
+        // School networks may be slow; 500ms gives most responses time to complete.
+        await new Promise((r) => setTimeout(r, 500));
       }
     } catch (err) {
       console.error('[Classroom++] auto expansion error:', err);
     } finally {
       isExpanding = false;
-      // Re-scan to apply window and update toggle count for all loaded posts
       scheduleScan(50);
+      setTimeout(() => recenterAllTopics(true), 300);
     }
   }
 
   function scan() {
-    if (scan._running) return;
+    if (isDragging || scan._running) return;
     scan._running = true;
     try {
       ensureSortToggleButton();
@@ -1035,7 +1256,8 @@
 
     lastPath = currentPath;
     lastWasClasswork = currentIsClasswork;
-    triggerAutoExpansion().then(() => scheduleScan(100));
+    triggerAutoExpansion();
+    scheduleScan(100);
   }
 
   let scanTimer = 0;
@@ -1056,18 +1278,67 @@
       : false;
   }
 
+  let autoExpansionTimer = 0;
+  function scheduleAutoExpansion(wait = 250) {
+    // Don't suppress scheduling when isExpanding — the expansion loop already
+    // handles its own rounds, but the MutationObserver may detect new View more
+    // buttons that appeared AFTER the last expansion loop ended. Allow a new
+    // timer to queue so those are picked up.
+    if (autoExpansionTimer) return;
+    autoExpansionTimer = window.setTimeout(() => {
+      autoExpansionTimer = 0;
+      triggerAutoExpansion();
+    }, wait);
+  }
+
   const observer = new MutationObserver((records) => {
+    // Ignore DOM mutations while the user is actively dragging posts
+    if (isDragging) return;
+
+    let hasRelevantChanges = false;
+    let hasNewTopic = false;
+    let hasNewStreamItems = false;
+
     for (const record of records) {
       if (record.type !== 'childList') continue;
-      const nodes = Array.from(record.addedNodes).concat(Array.from(record.removedNodes));
-      if (!nodes.length) continue;
-      if (nodes.every(isOurNode)) continue;
+      const addedNodes = Array.from(record.addedNodes);
+      const allNodes = addedNodes.concat(Array.from(record.removedNodes));
+      if (!allNodes.length) continue;
+      if (allNodes.every(isOurNode)) continue;
 
-      // Unhide all posts by expanding any native View more buttons
-      triggerAutoExpansion();
-      scheduleScan();
-      return;
+      hasRelevantChanges = true;
+
+      if (addedNodes.length > 0) {
+        for (const n of addedNodes) {
+          if (n.nodeType !== Node.ELEMENT_NODE) continue;
+          // New topic section mounted (e.g. dynamic DOM / SPA navigation)
+          if (!hasNewTopic && (n.matches?.('[data-topic-id]') || n.querySelector?.('[data-topic-id]'))) {
+            hasNewTopic = true;
+          }
+          // New stream items added to an existing topic (View more XHR response arrived)
+          // This is the critical case: Google appended new LI posts to an existing ol.
+          if (!hasNewStreamItems && (
+            n.matches?.('[data-stream-item-id]') ||
+            n.querySelector?.('[data-stream-item-id]') ||
+            n.matches?.('.Mvr5Ef') ||
+            n.querySelector?.('.Mvr5Ef') ||
+            n.matches?.('[jsname="t6Kl7b"]') ||
+            n.querySelector?.('[jsname="t6Kl7b"]')
+          )) {
+            hasNewStreamItems = true;
+          }
+        }
+      }
     }
+
+    if (!hasRelevantChanges) return;
+
+    if (hasNewTopic || hasNewStreamItems) {
+      // New posts loaded via View more XHR — schedule another expansion pass
+      // to click any newly revealed View more buttons for this or other topics.
+      scheduleAutoExpansion(hasNewTopic ? 300 : 500);
+    }
+    scheduleScan(120);
   });
 
   // Also check URL changes periodically in case of silent SPA navigation
@@ -1099,7 +1370,7 @@
           itemsCount: items.length,
           handled: shouldHandle(container, items),
           latestPostIndex: latestIdx,
-          latestIsDraft: isDraftItem(items[latestIdx]),
+          latestIsDraft: latestIdx >= 0 ? isDraftItem(items[latestIdx]) : false,
           hidden: container.getBoundingClientRect().width === 0,
         };
       }),
@@ -1108,44 +1379,56 @@
   }
 
   function init() {
+    loadInitialSettings();
     injectViewMoreHidingCSS();
+    setupGlobalDragHandlers();
     observer.observe(document.documentElement, { childList: true, subtree: true });
     window.addEventListener('resize', () => scheduleScan());
     window.addEventListener('popstate', onNavigationChange);
     window.addEventListener('hashchange', onNavigationChange);
 
     // Listen for genuine user tab clicks (e.g. clicking Classwork tab)
-    document.addEventListener('click', (e) => {
-      // Ignore programmatic clicks dispatched by extension
-      if (!e.isTrusted) return;
+    document.addEventListener(
+      'click',
+      (e) => {
+        // Ignore programmatic clicks dispatched by extension
+        if (!e.isTrusted) return;
 
-      const target = e.target.closest('a, button, [role="tab"]');
-      if (!target) return;
+        const target = e.target.closest('a, button, [role="tab"]');
+        if (!target) return;
 
-      // Ignore clicks on our own toggle buttons
-      if (target.classList.contains(CLASS.toggle) || target.closest(`.${CLASS.ui}`)) {
-        return;
-      }
+        // Ignore clicks on our own toggle buttons
+        if (target.classList.contains(CLASS.toggle) || target.closest(`.${CLASS.ui}`)) {
+          return;
+        }
 
-      const role = target.getAttribute('role');
-      const label = (target.getAttribute('aria-label') || '').toLowerCase();
-      const text = (target.textContent || '').toLowerCase();
-      const href = target.getAttribute('href') || '';
+        const role = target.getAttribute('role');
+        const label = (target.getAttribute('aria-label') || '').toLowerCase();
+        const text = (target.textContent || '').toLowerCase();
+        const href = target.getAttribute('href') || '';
 
-      // Only reset when user clicks the main Classwork navigation tab
-      if (
-        (role === 'tab' || target.tagName === 'A') &&
-        (text.includes('classwork') || label.includes('classwork') || href.includes('/w/'))
-      ) {
-        resetAllToDefault();
-        triggerAutoExpansion().then(() => scheduleScan(200));
-      }
-    }, true);
+        // Only reset when user clicks the main Classwork navigation tab
+        if (
+          (role === 'tab' || target.tagName === 'A') &&
+          (text.includes('classwork') || label.includes('classwork') || href.includes('/w/'))
+        ) {
+          resetAllToDefault();
+          triggerAutoExpansion();
+          scheduleScan(150);
+        }
+      },
+      true
+    );
 
-    // Unhide all posts by expanding Google's View more buttons, then scan
-    triggerAutoExpansion().then(() => scan());
-    setTimeout(() => triggerAutoExpansion(), 1200);
-    setTimeout(() => triggerAutoExpansion(), 2500);
+    // Unhide all posts by expanding Google's View more buttons, then scan.
+    // Fire multiple passes at increasing delays to handle slow page/network load.
+    // The MutationObserver will continue to react to new posts as XHR responses arrive.
+    triggerAutoExpansion();
+    scan();
+    setTimeout(triggerAutoExpansion, 300);
+    setTimeout(triggerAutoExpansion, 800);
+    setTimeout(triggerAutoExpansion, 2000);
+    setTimeout(triggerAutoExpansion, 4000);
   }
 
   if (document.readyState === 'loading') {

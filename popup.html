@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        width: 360px;
+        margin: 0;
+        font-family: "Inter", sans-serif;
+        background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%);
+        color: #333;
+        padding: 16px 18px 14px 18px;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+      }
+      .header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 14px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+      }
+      .header img {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+      }
+      .header h1 {
+        font-size: 18px;
+        margin: 0;
+        font-weight: 700;
+        color: #1e3a29;
+        letter-spacing: -0.3px;
+        white-space: nowrap;
+      }
+      .header-text {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+      }
+      .author-credit {
+        font-size: 10px;
+        color: #718096;
+        margin-top: 2px;
+      }
+      .tip-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 6px 12px;
+        background: #ff5e5b;
+        color: #fff;
+        border: none;
+        border-radius: 20px;
+        font-family: "Inter", sans-serif;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s ease, transform 0.15s ease;
+        white-space: nowrap;
+      }
+      .tip-btn:hover {
+        background: #e04e4b;
+        transform: translateY(-1px);
+      }
+      .tip-btn svg {
+        flex-shrink: 0;
+      }
+      .card {
+        background: rgba(255, 255, 255, 0.92);
+        backdrop-filter: blur(10px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        border-radius: 12px;
+        padding: 12px 14px;
+        width: 100%;
+        box-sizing: border-box;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+      .card:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+      }
+      .label {
+        font-size: 13px;
+        font-weight: 600;
+        color: #2d3748;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .info-icon {
+        position: relative;
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%234b6584' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3'/%3E%3Cline x1='12' y1='17' x2='12.01' y2='17'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-size: contain;
+        cursor: help;
+      }
+      /* Custom Tooltip Bubble */
+      .info-icon::after {
+        content: attr(data-tooltip);
+        position: absolute;
+        bottom: 130%;
+        left: 50%;
+        transform: translateX(-50%) translateY(8px);
+        background: #1a202c;
+        color: #fff;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 400;
+        line-height: 1.4;
+        width: 210px;
+        text-align: left;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease, transform 0.2s ease;
+        z-index: 100;
+        white-space: normal;
+      }
+      .info-icon::before {
+        content: "";
+        position: absolute;
+        bottom: 115%;
+        left: 50%;
+        transform: translateX(-50%) translateY(8px);
+        border-width: 6px 6px 0 6px;
+        border-style: solid;
+        border-color: #1a202c transparent transparent transparent;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease, transform 0.2s ease;
+        z-index: 100;
+      }
+      .info-icon:hover::after,
+      .info-icon:hover::before {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+      /* Switch */
+      .switch {
+        position: relative;
+        display: inline-block;
+        width: 44px;
+        height: 24px;
+      }
+      .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+      .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #cbd5e1;
+        transition: 0.3s;
+        border-radius: 24px;
+      }
+      .slider:before {
+        position: absolute;
+        content: "";
+        height: 18px;
+        width: 18px;
+        left: 3px;
+        bottom: 3px;
+        background-color: white;
+        transition: 0.3s;
+        border-radius: 50%;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+      }
+      input:checked + .slider {
+        background-color: #16803c; /* Classroom green */
+      }
+      input:checked + .slider:before {
+        transform: translateX(20px);
+      }
+      .footer {
+        margin-top: 10px;
+        font-size: 11px;
+        color: #718096;
+        text-align: center;
+        line-height: 1.4;
+      }
+      .footer-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 12px;
+        padding-top: 10px;
+        border-top: 1px solid rgba(0, 0, 0, 0.06);
+      }
+      .welcome-link {
+        font-size: 11px;
+        color: #4a5568;
+        text-decoration: none;
+        font-weight: 500;
+        transition: color 0.2s ease;
+      }
+      .welcome-link:hover {
+        color: #16803c;
+        text-decoration: underline;
+      }
+      .version-link {
+        font-size: 10px;
+        color: #a0aec0;
+        text-decoration: none;
+        cursor: pointer;
+        transition: color 0.2s ease, text-decoration 0.2s ease;
+      }
+      .version-link:hover {
+        color: #16803c;
+        text-decoration: underline;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <img src="icons/icon48.png" alt="Classroom++ Logo" />
+      <div class="header-text">
+        <h1>Classroom++</h1>
+        <span class="author-credit">&gt; Jonathan Kung</span>
+      </div>
+      <button class="tip-btn" id="tipBtn" title="Support development on Ko-Fi">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+        >
+          <g transform="scale(0.09)">
+            <g transform="translate(1.4065934065934016 1.4065934065934016) scale(2.81 2.81)">
+              <path
+                d="M 35.982 81.106 c -13.1 0 -23.756 -5.859 -30.002 -16.498 C 0.451 55.282 0 45.181 0 33.895 c 0 -6.691 2.013 -12.517 5.819 -16.849 c 3.497 -3.979 8.453 -6.556 13.956 -7.258 c 6.532 -0.828 14.654 -0.896 23.097 -0.896 c 13.74 0 17.622 0.168 23.028 0.709 c 7.192 0.714 13.243 3.398 17.496 7.763 C 87.717 21.798 90 27.718 90 34.492 v 1.361 c 0 11.559 -7.727 21.233 -18.497 23.863 c -0.804 1.897 -1.8 3.784 -2.978 5.643 l -0.031 0.047 C 64.7 71.271 55.782 81.108 38.701 81.108 h -2.722 L 35.982 81.106 z"
+                fill="#fff"
+              />
+              <path
+                d="M 65.336 15.261 c -5.105 -0.51 -8.678 -0.681 -22.462 -0.681 c -8.849 0 -16.337 0.085 -22.376 0.851 c -7.998 1.022 -14.805 7.147 -14.805 18.464 c 0 11.317 0.595 20.081 5.19 27.823 c 5.19 8.849 13.869 13.698 25.101 13.698 h 2.722 c 13.783 0 21.271 -7.317 25.015 -13.103 c 1.617 -2.554 2.807 -5.105 3.573 -7.659 c 9.785 -0.851 17.017 -8.934 17.017 -18.803 v -1.361 c 0 -10.634 -6.976 -18.037 -18.974 -19.23 H 65.336 z"
+                fill="#fff"
+              />
+              <path
+                d="M 5.691 33.895 c 0 -11.317 6.807 -17.442 14.805 -18.464 c 6.042 -0.766 13.53 -0.851 22.376 -0.851 c 13.783 0 17.356 0.171 22.461 0.681 c 11.998 1.19 18.974 8.593 18.974 19.23 v 1.361 c 0 9.871 -7.232 17.954 -17.017 18.803 c -0.766 2.554 -1.956 5.105 -3.573 7.659 c -3.744 5.785 -11.232 13.103 -25.015 13.103 H 35.98 c -11.232 0 -19.91 -4.849 -25.101 -13.698 c -4.595 -7.742 -5.19 -16.337 -5.19 -27.823"
+                fill="#202020"
+              />
+              <path
+                d="M 12.071 33.98 c 0 10.976 0.681 18.037 4.254 24.589 c 4.083 7.573 11.486 10.466 19.91 10.466 h 2.636 c 11.062 0 16.422 -5.361 19.401 -10.04 c 1.446 -2.383 2.722 -5.019 3.403 -8.339 l 0.51 -2.127 h 3.064 c 6.807 0 12.678 -5.529 12.678 -12.593 V 34.66 c 0 -7.912 -4.934 -12.083 -13.529 -13.103 c -4.849 -0.424 -7.742 -0.595 -21.527 -0.595 c -9.274 0 -15.91 0.085 -20.93 0.851 c -7.061 1.022 -9.871 5.02 -9.871 12.166"
+                fill="#fff"
+              />
+              <path
+                d="M 20.411 39.338 c 0 5.02 2.807 9.359 6.381 12.764 c 2.383 2.298 6.127 4.681 8.678 6.212 c 0.766 0.425 1.532 0.681 2.383 0.681 c 1.022 0 1.871 -0.256 2.554 -0.681 c 2.554 -1.532 6.295 -3.914 8.593 -6.212 c 3.659 -3.403 6.466 -7.742 6.466 -12.764 c 0 -5.446 -4.083 -10.295 -9.954 -10.295 c -3.488 0 -5.871 1.788 -7.659 4.254 c -1.617 -2.468 -4.083 -4.254 -7.573 -4.254 c -5.956 0 -9.871 4.849 -9.871 10.295"
+                fill="#ff5a16"
+              />
+            </g>
+          </g>
+        </svg>
+        Tip Me
+      </button>
+    </div>
+
+    <!-- Setting 1: Reverse Order -->
+    <div class="card">
+      <div class="label">
+        Reverse Order
+        <span
+          class="info-icon"
+          data-tooltip="Reverses the display order of posts in all topic sections, placing newly created drafts at the top."
+        ></span>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="toggleReverseOrder" />
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <!-- Setting 2: Smart Centering -->
+    <div class="card">
+      <div class="label">
+        Smart Centering
+        <span
+          class="info-icon"
+          data-tooltip="Automatically scrolls each topic so the latest published post is aligned to the middle, next to upcoming drafts."
+        ></span>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="toggleSmartCentering" checked />
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="footer" id="statusMessage">
+      Settings sync automatically across all your devices.
+    </div>
+
+    <div class="footer-bar">
+      <a href="#" class="welcome-link" id="welcomeLink">Show Welcome Screen</a>
+      <a href="#" class="version-link" id="versionLink">v. 0.2.0</a>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
+
