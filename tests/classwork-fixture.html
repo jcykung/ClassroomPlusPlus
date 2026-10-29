@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Classwork - Classroom++ test fixture</title>
+<link rel="stylesheet" href="../src/content.css">
+<style>
+  body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+  main { max-width: 720px; margin: 0 auto; }
+  .posts { display: flex; flex-direction: column; row-gap: 8px; margin: 0 0 8px; }
+  .post { height: 60px; background: #f1f3f4; border-radius: 8px; position: relative; }
+  .post a { display: block; line-height: 60px; padding: 0 12px; color: #1a73e8; }
+  .draft-badge { display: inline-block; background: #dadce0; color: #3c4043; font-size: 11px; padding: 2px 6px; border-radius: 4px; margin-left: 8px; }
+  #sidebar .posts { row-gap: 6px; }
+  #results { white-space: pre-wrap; font-family: monospace; padding: 16px; font-size: 14px; }
+</style>
+</head>
+<body>
+<div role="main">
+  <div class="stream-header-actions" style="display: flex; justify-content: flex-end; align-items: center; margin-bottom: 16px;">
+    <button id="google-collapse-all" type="button" aria-label="Collapse all topics" style="padding: 6px 12px; border-radius: 4px; border: 1px solid #dadce0; background: #fff; cursor: pointer;">
+      <span>Collapse all</span>
+    </button>
+  </div>
+  <section id="topic-1">
+    <h2>Topic One (With Drafts)</h2>
+    <div class="posts" id="list-1" role="list"></div>
+  </section>
+  <section id="topic-2">
+    <h2>Topic Two (All Published)</h2>
+    <div class="posts" id="list-2" role="list"></div>
+  </section>
+  <section id="topic-3">
+    <h2>Small Topic</h2>
+    <div class="posts" id="list-3" role="list"></div>
+  </section>
+  <section id="topic-4">
+    <h2>Nested Markup Topic</h2>
+    <div class="posts" id="list-4"></div>
+  </section>
+  <section id="topic-5">
+    <h2>Multi-account Links Topic</h2>
+    <div class="posts" id="list-5" role="list"></div>
+  </section>
+  <section id="topic-6" data-topic-id="877248554999">
+    <h2>Topic Six (Truncated with Google View More)</h2>
+    <div class="posts" id="list-6" role="list"></div>
+    <button class="mUIrbf-LgbsSe mUIrbf-LgbsSe-OWXEXe-dgl2Hf nZ34k" id="google-view-more-btn" jsname="t6Kl7b" aria-label="View more posts">
+      <span jsname="V67aGc" class="mUIrbf-vQzf8d" aria-hidden="true">View more</span>
+    </button>
+  </section>
+</div>
+<aside role="complementary">
+  <h2>To-do</h2>
+  <div class="posts" id="sidebar" role="list"></div>
+</aside>
+<div id="results">PENDING</div>
+
+<script>
+function hrefFor(listId, i) {
+  if (listId === 'list-5') return `https://classroom.google.com/u/0/w/eHl6MTIz/a/item_${listId}_${i}/details`;
+  return `/w/NTIzX2lk/a/item_${listId}_${i}/details`;
+}
+function buildPost(listId, i, nested, isDraft) {
+  const wrap = document.createElement('div');
+  wrap.className = 'post';
+  wrap.setAttribute('role', 'listitem');
+  if (isDraft) {
+    wrap.setAttribute('aria-label', `Post ${i + 1} (Draft)`);
+  }
+  const inner = document.createElement('div');
+  const a = document.createElement('a');
+  a.href = hrefFor(listId, i);
+  a.textContent = `Post ${i + 1} of ${listId}`;
+  if (isDraft) {
+    const badge = document.createElement('span');
+    badge.className = 'draft-badge';
+    badge.textContent = 'Draft';
+    a.appendChild(badge);
+  }
+  inner.appendChild(a);
+  if (nested) {
+    const extra = document.createElement('div');
+    extra.appendChild(inner);
+    wrap.appendChild(extra);
+  } else {
+    wrap.appendChild(inner);
+  }
+  return wrap;
+}
+function fill(id, count, nested, draftStartIndex) {
+  const list = document.getElementById(id);
+  for (let i = 0; i < count; i++) {
+    const isDraft = typeof draftStartIndex === 'number' && i >= draftStartIndex;
+    list.appendChild(buildPost(id, i, nested, isDraft));
+  }
+}
+// list-1 has 8 posts: 5 published (0-4), followed by 3 drafts (5-7).
+// The latest published post is index 4.
+// Middle alignment should make index 4 the 3rd post of 5 visible (index 2 at top).
+fill('list-1', 8, false, 5);
+// list-2 has 12 published posts. Latest is index 11.
+fill('list-2', 12, false);
+// list-3 has 3 posts (under 5, untouched).
+fill('list-3', 3, false);
+fill('list-4', 7, true);
+fill('list-5', 9, false);
+fill('sidebar', 8, false);
+
+// list-6 simulates Google Classroom's truncated list:
+// Initially only 3 posts are visible, with Google's native "View more" button.
+// When clicked, Google Classroom adds 4 more posts (total 7) and removes the button.
+fill('list-6', 3, false);
+const gBtn = document.getElementById('google-view-more-btn');
+if (gBtn) {
+  gBtn.addEventListener('click', () => {
+    // Append 4 more posts to reach 7 total
+    const list6 = document.getElementById('list-6');
+    for (let i = 3; i < 7; i++) {
+      list6.appendChild(buildPost('list-6', i, false, false));
+    }
+    gBtn.remove();
+  }, { once: true });
+}
+</script>
+<script src="../src/content.js"></script>
+<script>
+(function () {
+  const ITEM = 60, GAP = 8;
+  const lines = [];
+  const ok = (name, cond, detail) => lines.push(`${cond ? 'PASS' : 'FAIL'} ${name}${detail ? ' — ' + detail : ''}`);
+  const approx = (a, b, tol) => Math.abs(a - b) <= tol;
+
+  function run() {
+    const api = window.__classroomPlusPlus;
+    ok('test hook exposed', !!api);
+    if (api) api.scan();
+
+    const list1 = document.getElementById('list-1');
+    const list2 = document.getElementById('list-2');
+    const list3 = document.getElementById('list-3');
+    const list4 = document.getElementById('list-4');
+    const sidebar = document.getElementById('sidebar');
+
+    // 1. Big topics become scroll windows sized for exactly 5 posts.
+    const expectH = 5 * ITEM + 4 * GAP; // 332px
+    ok('list-1 enhanced', list1.classList.contains('cpp-scroll-window'));
+    ok('list-1 window height (5 posts)', approx(list1.clientHeight, expectH, 3), `got ${list1.clientHeight}, want ~${expectH}`);
+    ok('list-1 scrollable beyond window', list1.scrollHeight > list1.clientHeight + 10,
+      `scrollHeight=${list1.scrollHeight} clientHeight=${list1.clientHeight}`);
+
+    // 2. Draft detection & Middle Alignment on latest post (not drafts)
+    // list-1 has 8 items: 0..4 published, 5..7 drafts. Latest is index 4.
+    // 3rd of 5 visible means index 2 should be at the top of the scroll!
+    const latest1 = api.findLatestPostIndex(Array.from(list1.children));
+    ok('list-1 latest published post is index 4', latest1 === 4, `got index ${latest1}`);
+    const post2 = list1.children[2];
+    const post2Top = post2.offsetTop;
+    ok('list-1 aligned so latest post is 3rd of 5 (post 2 at top)',
+      approx(list1.scrollTop, post2Top, 3),
+      `scrollTop=${list1.scrollTop}, post2.offsetTop=${post2Top}`);
+
+    // 3. "View all" toggle label and expansion
+    const btn1 = list1.nextElementSibling && list1.nextElementSibling.querySelector('.cpp-toggle');
+    ok('list-1 toggle exists', !!btn1);
+    const labelSpan1 = btn1 && btn1.querySelector('.cpp-toggle-text');
+    ok('list-1 toggle label is View all (8)',
+      !!labelSpan1 && labelSpan1.textContent === 'View all (8)',
+      `got "${labelSpan1 && labelSpan1.textContent}"`);
+
+    // Click View all
+    if (btn1) btn1.click();
+    const fullH = 8 * ITEM + 7 * GAP; // 536
+    ok('list-1 expanded class', list1.classList.contains('cpp-expanded'));
+    ok('list-1 view all reveals all posts', approx(list1.scrollHeight, fullH, 6),
+      `scrollHeight=${list1.scrollHeight}, want ~${fullH}`);
+    ok('list-1 toggle label becomes View fewer',
+      !!labelSpan1 && labelSpan1.textContent === 'View fewer');
+    ok('list-1 aria-expanded true', !!btn1 && btn1.getAttribute('aria-expanded') === 'true');
+
+    // 4. Collapse restores 5 posts window and re-aligns to middle
+    if (btn1) btn1.click();
+    ok('list-1 collapsed class restored', !list1.classList.contains('cpp-expanded'));
+    ok('list-1 window height after collapse', approx(list1.clientHeight, expectH, 3),
+      `got ${list1.clientHeight}`);
+    ok('list-1 re-aligned after collapse',
+      approx(list1.scrollTop, post2Top, 3),
+      `scrollTop=${list1.scrollTop}, post2.offsetTop=${post2Top}`);
+
+    // 5. Topic Two (All Published, 12 items). Latest is index 11.
+    ok('list-2 enhanced', list2.classList.contains('cpp-scroll-window'));
+    const latest2 = api.findLatestPostIndex(Array.from(list2.children));
+    ok('list-2 latest post is index 11', latest2 === 11, `got index ${latest2}`);
+    // Latest index 11 is 3rd of 5 -> index 9 is at top
+    const post9Top = list2.children[9].offsetTop;
+    ok('list-2 aligned with tail space (post 9 at top)',
+      approx(list2.scrollTop, post9Top, 3),
+      `scrollTop=${list2.scrollTop}, post9.offsetTop=${post9Top}`);
+    const btn2 = list2.nextElementSibling && list2.nextElementSibling.querySelector('.cpp-toggle');
+    const labelSpan2 = btn2 && btn2.querySelector('.cpp-toggle-text');
+    ok('list-2 toggle label is View all (12)',
+      !!labelSpan2 && labelSpan2.textContent === 'View all (12)');
+
+    // 6. Navigation reset: resetAllToDefault() collapses expanded topics
+    if (btn1) btn1.click(); // re-expand list-1
+    ok('list-1 expanded before reset', list1.classList.contains('cpp-expanded'));
+    api.resetAllToDefault();
+    api.scan();
+    ok('list-1 collapsed after navigation reset', !list1.classList.contains('cpp-expanded'));
+    ok('list-1 re-centered after navigation reset',
+      approx(list1.scrollTop, post2Top, 3),
+      `scrollTop=${list1.scrollTop}`);
+
+    // 7. Small topics and sidebars untouched
+    ok('list-3 untouched (small topic <= 5)', !list3.classList.contains('cpp-scroll-window'));
+    ok('list-3 has no toggle', !(list3.nextElementSibling && list3.nextElementSibling.classList.contains('cpp-ui')));
+    ok('sidebar untouched', !sidebar.classList.contains('cpp-scroll-window'));
+
+    // 8. Auto-expand Google native "View more" buttons to unhide all posts
+    const list6 = document.getElementById('list-6');
+    ok('list-6 auto-expanded from Google View more to 7 posts', list6.children.length === 7,
+      `got ${list6.children.length} items`);
+    ok('list-6 enhanced with 5-post window', list6.classList.contains('cpp-scroll-window'));
+    const btn6 = list6.nextElementSibling && list6.nextElementSibling.querySelector('.cpp-toggle');
+    ok('list-6 toggle exists', !!btn6);
+    const labelSpan6 = btn6 && btn6.querySelector('.cpp-toggle-text');
+    ok('list-6 toggle label is View all (7)',
+      !!labelSpan6 && labelSpan6.textContent === 'View all (7)',
+      `got "${labelSpan6 && labelSpan6.textContent}"`);
+    const gBtnRemaining = document.getElementById('google-view-more-btn');
+    ok('Google native View more button removed or hidden',
+      !gBtnRemaining || gBtnRemaining.classList.contains('cpp-hidden-view-more'));
+
+    // 9. Sort order toggle button (Requirement 4)
+    const sortBtn = document.getElementById('cpp-sort-toggle');
+    const collapseAllBtn = document.getElementById('google-collapse-all');
+    ok('sort toggle button created', !!sortBtn);
+    ok('sort toggle button placed to the left of Collapse all',
+      !!sortBtn && sortBtn.nextElementSibling === collapseAllBtn);
+    ok('sort toggle default text',
+      !!sortBtn && sortBtn.textContent.includes('Reverse order'));
+
+    // Toggle sort order ON: should reverse items in all topic scroll windows
+    if (sortBtn) sortBtn.click();
+    ok('sort toggle active class added', !!sortBtn && sortBtn.classList.contains('cpp-sort-active'));
+    ok('isReversed state is true', api.getIsReversed() === true);
+    ok('list-1 has cpp-reversed class', list1.classList.contains('cpp-reversed'));
+    ok('list-2 has cpp-reversed class', list2.classList.contains('cpp-reversed'));
+    ok('list-6 has cpp-reversed class', list6.classList.contains('cpp-reversed'));
+    ok('list-1 item 0 order set to 7', list1.children[0].style.order === '7');
+    ok('list-1 item 7 order set to 0', list1.children[7].style.order === '0');
+
+    // Toggle sort order back OFF
+    if (sortBtn) sortBtn.click();
+    ok('sort toggle active class removed', !!sortBtn && !sortBtn.classList.contains('cpp-sort-active'));
+    ok('isReversed state is false', api.getIsReversed() === false);
+    ok('list-1 cpp-reversed class removed', !list1.classList.contains('cpp-reversed'));
+    ok('list-1 item order cleared', !list1.children[0].style.order);
+
+    // 10. Drag & Drop indicator element exists (Requirement 3)
+    const dropIndicator = document.querySelector('.cpp-drop-indicator');
+    ok('drop indicator element exists in DOM', !!dropIndicator);
+
+    const failed = lines.filter((l) => l.startsWith('FAIL')).length;
+    lines.push(failed === 0 ? 'ALL TESTS PASSED' : `${failed} TEST(S) FAILED`);
+    document.getElementById('results').textContent = lines.join('\n');
+  }
+
+  if (document.readyState === 'complete') {
+    setTimeout(run, 1200);
+  } else {
+    window.addEventListener('load', () => setTimeout(run, 1200));
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,221 @@
+/* Classroom++ — injected styles.
+ * Only cpp-* classes/variables below touch the page; Classroom's own
+ * markup is never altered beyond adding these classes. */
+
+.cpp-scroll-window {
+  box-sizing: border-box;
+  max-height: var(--cpp-window-height, 60vh);
+  height: var(--cpp-window-height, auto);
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(60, 64, 67, 0.35) transparent;
+  position: relative;
+}
+
+.cpp-scroll-window::-webkit-scrollbar {
+  width: 8px;
+}
+
+.cpp-scroll-window::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.cpp-scroll-window::-webkit-scrollbar-thumb {
+  background: rgba(60, 64, 67, 0.28);
+  border-radius: 999px;
+}
+
+.cpp-scroll-window::-webkit-scrollbar-thumb:hover {
+  background: rgba(60, 64, 67, 0.45);
+}
+
+/* Extra space after the newest post so it can sit in the middle of the
+ * window. A pseudo-element keeps Classroom's real DOM untouched. */
+.cpp-scroll-window::after {
+  content: "";
+  display: block;
+  height: var(--cpp-tail-space, 0px);
+  min-height: var(--cpp-tail-space, 0px);
+  flex: none; /* never let a flex column layout squeeze the tail to zero */
+}
+
+/* Keep post heights stable inside the window: a fixed-height flex column
+ * would otherwise squeeze its (shrinkable) posts to fit the window. */
+.cpp-scroll-window > * {
+  flex-shrink: 0;
+}
+
+/* Super expand: show every post in the topic. */
+.cpp-scroll-window.cpp-expanded {
+  max-height: none !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+
+.cpp-scroll-window.cpp-expanded::after {
+  display: none !important;
+}
+
+.cpp-ui.cpp-controls {
+  display: flex;
+  justify-content: center;
+  margin: 8px 0 16px;
+}
+
+.cpp-toggle {
+  appearance: none;
+  background: #ffffff;
+  border: 1px solid rgba(11, 87, 208, 0.35);
+  border-radius: 999px;
+  color: #0b57d0; /* Classroom blue */
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  padding: 6px 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 1px 2px rgba(60, 64, 67, 0.08);
+  transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.cpp-toggle:hover {
+  background: rgba(11, 87, 208, 0.06);
+  border-color: #0b57d0;
+  box-shadow: 0 1px 3px rgba(11, 87, 208, 0.15);
+}
+
+.cpp-toggle:active {
+  background: rgba(11, 87, 208, 0.12);
+}
+
+.cpp-toggle:focus-visible {
+  outline: 2px solid #0b57d0;
+  outline-offset: 2px;
+}
+
+.cpp-toggle-icon {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  transition: transform 0.2s ease;
+  fill: currentColor;
+}
+
+.cpp-toggle[aria-expanded="true"] .cpp-toggle-icon {
+  transform: rotate(180deg);
+}
+
+/* Reversed sort order: keeps layout column and puts tail space at bottom */
+.cpp-scroll-window.cpp-reversed {
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.cpp-scroll-window.cpp-reversed::after {
+  order: 999999 !important;
+}
+
+/* Sort toggle button at top next to "Collapse all" */
+.cpp-sort-toggle {
+  appearance: none;
+  background: #ffffff;
+  border: 1px solid #dadce0;
+  border-radius: 999px;
+  color: #3c4043;
+  cursor: pointer;
+  font-family: "Google Sans", Roboto, Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  padding: 6px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 8px;
+  box-shadow: 0 1px 2px rgba(60, 64, 67, 0.08);
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
+  user-select: none;
+  vertical-align: middle;
+}
+
+.cpp-sort-toggle:hover {
+  background: #f8f9fa;
+  border-color: #0b57d0;
+  color: #0b57d0;
+  box-shadow: 0 1px 3px rgba(11, 87, 208, 0.15);
+}
+
+.cpp-sort-toggle.cpp-sort-active {
+  background: #e8f0fe;
+  border-color: #0b57d0;
+  color: #0b57d0;
+  font-weight: 600;
+}
+
+.cpp-sort-icon {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+  flex: none;
+}
+
+/* Horizontal drop indicator line when dragging posts */
+.cpp-drop-indicator {
+  position: fixed;
+  display: none;
+  align-items: center;
+  pointer-events: none;
+  height: 4px;
+  z-index: 99999;
+  transition: top 0.06s ease-out;
+}
+
+.cpp-drop-line {
+  flex: 1;
+  height: 3px;
+  background: #1a73e8; /* Google Classroom Blue */
+  border-radius: 999px;
+  box-shadow: 0 0 6px rgba(26, 115, 232, 0.6);
+}
+
+.cpp-drop-dot-left,
+.cpp-drop-dot-right {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #1a73e8;
+  flex: none;
+  box-shadow: 0 0 4px rgba(26, 115, 232, 0.8);
+}
+
+
+/* Classroom++ — Visually hide Google Classroom's native "View more" button
+ * We keep it rendered at 0 opacity with 1px clipped off-screen so Google's
+ * Wiz controllers mount and accept our automated click, while remaining
+ * completely invisible to the user and taking zero space in the layout. */
+button[aria-label*="View more" i],
+.cpp-native-view-more {
+  position: absolute !important;
+  opacity: 0 !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  clip-path: inset(50%) !important;
+}
+
+/* Once clicked and processed, collapse completely */
+button[data-cpp-clicked="true"],
+.cpp-hidden-view-more {
+  display: none !important;
+}
+
