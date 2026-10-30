@@ -42,6 +42,23 @@
   };
 
   const MAIN_SELECTOR = '[role="main"], main, #yDmH0d, body';
+
+  /**
+   * The main region of the view currently on screen.
+   *
+   * Classroom keeps previously visited classes' regions in the DOM, and they
+   * come first in document order. Taking the first match therefore meant
+   * enhancing a hidden copy of an older class while the class on screen stayed
+   * untouched — which looked like the extension doing nothing until a reload.
+   */
+  function getMainElement() {
+    const candidates = Array.from(document.querySelectorAll(MAIN_SELECTOR));
+    for (const el of candidates) {
+      if (el === document.body || el === document.documentElement) continue;
+      if (el.getClientRects().length) return el;
+    }
+    return candidates[0] || document.body;
+  }
   const ROLE_ITEM_SELECTOR = 'li[data-stream-item-id], [data-stream-item-id], [role="listitem"]';
   const SKIP_ANCESTOR_SELECTOR =
     'aside, nav, [role="navigation"], [role="complementary"], [role="dialog"], [aria-modal="true"], [role="menu"], [role="listbox"], [role="combobox"], .aqdrmf-rymPhb, [jscontroller="bZ0mod"], [data-is-select-menu="true"]';
@@ -82,9 +99,21 @@
     } catch (_) {}
   }
 
+  /** Bulk "mark as reviewed" checkboxes on the To review page (on by default). */
+  let bulkReviewEnabled = true;
+  /** Master switch for every Classwork enhancement (on by default). */
+  let classworkLayoutEnabled = true;
+
+  /** Reads the Classwork Layout switch, honouring its pre-0.2.2 key. */
+  function readClassworkLayout(result) {
+    if (!result) return true;
+    if (typeof result.classworkLayout === 'boolean') return result.classworkLayout;
+    return result.smartCentering !== false;
+  }
+
   function loadInitialSettings() {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.sync) {
-      chrome.storage.sync.get(['isReversed'], (result) => {
+      chrome.storage.sync.get(['isReversed', 'bulkReview', 'classworkLayout', 'smartCentering'], (result) => {
         if (result && typeof result.isReversed === 'boolean') {
           if (result.isReversed !== isReversed) {
             isReversed = result.isReversed;
@@ -94,6 +123,15 @@
             refreshSortButton();
             applySortOrderToAll();
           }
+        }
+        if (result && typeof result.bulkReview === 'boolean') {
+          bulkReviewEnabled = result.bulkReview;
+          updateReviewMode();
+        }
+        const layout = readClassworkLayout(result);
+        if (layout !== classworkLayoutEnabled) {
+          classworkLayoutEnabled = layout;
+          scan();
         }
       });
     }
@@ -111,6 +149,14 @@
           refreshSortButton();
           applySortOrderToAll();
         }
+      }
+      if (area === 'sync' && changes.bulkReview) {
+        bulkReviewEnabled = changes.bulkReview.newValue !== false;
+        updateReviewMode();
+      }
+      if (area === 'sync' && changes.classworkLayout) {
+        classworkLayoutEnabled = changes.classworkLayout.newValue !== false;
+        scan();
       }
     });
   }
@@ -274,18 +320,16 @@
     };
   }
 
-  function updateOverlay(loaded, total) {
+  /**
+   * The overlay only says what it is doing. Classroom never tells us how many
+   * posts a topic still holds behind "View more", so any number here is a
+   * guess — the count was removed rather than kept inaccurate.
+   */
+  function updateOverlay() {
     if (!overlayEl) return;
+    overlayBar.removeAttribute('value'); // stay indeterminate
     const text = overlayEl.querySelector('.cpp-loading-text');
-    if (total > 0) {
-      overlayBar.max = total;
-      overlayBar.value = loaded;
-      if (text) text.textContent = `Loading posts… ${loaded} / ${total}`;
-    } else {
-      // Remove value attr to keep indeterminate
-      overlayBar.removeAttribute('value');
-      if (text) text.textContent = 'Loading posts…';
-    }
+    if (text) text.textContent = 'Loading posts…';
   }
 
   function hideOverlay() {
@@ -1196,7 +1240,30 @@
 
   // --- Sort Order (Reverse All Topics) ---
 
+  // Looking for "Collapse all" walks every button on the page, so the result is
+  // cached for a few seconds per view instead of on every scan.
+  let collapseBtnCache = null;
+  let collapseBtnCacheAt = 0;
+  let collapseBtnCachePath = '';
+
   function findCollapseAllButton() {
+    const now = Date.now();
+    if (
+      collapseBtnCache &&
+      collapseBtnCache.isConnected &&
+      collapseBtnCachePath === location.pathname &&
+      now - collapseBtnCacheAt < 5000
+    ) {
+      return collapseBtnCache;
+    }
+    const found = findCollapseAllButtonUncached();
+    collapseBtnCache = found;
+    collapseBtnCacheAt = now;
+    collapseBtnCachePath = location.pathname;
+    return found;
+  }
+
+  function findCollapseAllButtonUncached() {
     const allBtns = document.querySelectorAll('button, [role="button"]');
     for (const btn of allBtns) {
       if (btn.id === 'cpp-sort-toggle' || btn.closest(`.${CLASS.ui}`)) continue;
@@ -1212,7 +1279,7 @@
     }
 
     // Fallback: look near the first topic heading/section
-    const main = document.querySelector(MAIN_SELECTOR) || document.body;
+    const main = getMainElement();
     const firstTopic = main.querySelector('[data-topic-id], section, h2');
     if (firstTopic && firstTopic.parentElement) {
       const candidateBtn = firstTopic.parentElement.querySelector('button');
@@ -1279,9 +1346,23 @@
     }
   }
 
+  function removeSortToggleButton() {
+    const btn = document.getElementById('cpp-sort-toggle');
+    if (btn) btn.remove();
+    // Don't keep a reference to a button from a class we have left.
+    sortButtonStyleSource = null;
+  }
+
   function ensureSortToggleButton() {
-    const collapseBtn = findCollapseAllButton();
     let btn = document.getElementById('cpp-sort-toggle');
+
+    // The button belongs to the Classwork tab only: never show it elsewhere.
+    if (!onClassworkContent()) {
+      removeSortToggleButton();
+      return;
+    }
+
+    const collapseBtn = findCollapseAllButton();
 
     if (!collapseBtn) {
       return;
@@ -1557,11 +1638,34 @@
   }
 
   /**
-   * Count posts currently present. Includes role="listitem" so fixtures and
-   * pages that don't expose data-stream-item-id still report progress.
+   * Count the posts Classroom++ actually sees: the list items of the topic post
+   * lists inside the Classwork main area. Uses the same grouping as the scanner,
+   * so menus and the To-do sidebar are not counted as posts.
+   */
+  function countLoadedPosts() {
+    const main = getMainElement();
+    // Count each post once. Two things used to inflate this number:
+    //   - overlapping groups (a wrapper list and the topic list inside it both
+    //     contributed the same posts), and
+    //   - the previous class' topic lists, which Classroom leaves in the DOM
+    //     (hidden) while switching classes, so a second load added the first
+    //     class' posts to the total.
+    const counted = new Set();
+    for (const [container, items] of collectGroups(main)) {
+      if (!container.getClientRects().length) continue;
+      for (const item of items) counted.add(item);
+    }
+    return counted.size;
+  }
+
+  /**
+   * Cheap counter used only to notice that a "View more" click appended posts.
+   * Includes role="listitem" so fixtures and pages that don't expose
+   * data-stream-item-id still report progress.
    */
   function currentPostCount() {
-    return document.querySelectorAll('[data-stream-item-id], [role="listitem"]').length;
+    const main = getMainElement();
+    return main.querySelectorAll('[data-stream-item-id], [role="listitem"]').length;
   }
 
   /**
@@ -1627,7 +1731,8 @@
    */
   function requestExpansion(delay = 0) {
     if (isExpanding || expansionRequested) return;
-    if (!isClassworkView()) return;
+    if (!classworkLayoutEnabled) return;
+    if (!onClassworkContent()) return;
     if (findUnclickedViewMore().length === 0) return;
 
     expansionRequested = true;
@@ -1635,6 +1740,76 @@
       expansionRequested = false;
       triggerAutoExpansion();
     }, delay);
+  }
+
+  /**
+   * Safety net for a Classwork view that appears without a mutation our
+   * observer can see (switching classes reuses the previous class' DOM and new
+   * topics can be revealed by style/attribute changes only). Without this, a
+   * half-loaded topic stayed that way until the page was reloaded.
+   */
+  function ensurePostsLoaded() {
+    if (document.visibilityState === 'hidden') return;
+    if (isExpanding || expansionRequested) return;
+    if (!classworkLayoutEnabled) return;
+    if (!onClassworkContent()) return;
+    if (findUnclickedViewMore().length === 0) return;
+    requestExpansion(0);
+  }
+
+  /**
+   * Cheap snapshot of what Classwork is currently showing. Classroom can put a
+   * whole page on screen by revealing already-rendered nodes (style/attribute
+   * changes) rather than by adding nodes, which the MutationObserver never
+   * reports — that is why entering a class sometimes did nothing until a
+   * reload. The poll below compares this snapshot and rescans on any change.
+   */
+  function viewSignature() {
+    const topics = Array.from(document.querySelectorAll('[data-topic-id]'));
+    let visibleTopics = 0;
+    let firstVisibleId = '';
+    for (const topic of topics) {
+      if (!topic.getClientRects().length) continue;
+      visibleTopics++;
+      if (!firstVisibleId) firstVisibleId = topic.getAttribute('data-topic-id') || '';
+    }
+    return [
+      location.pathname,
+      topics.length,
+      visibleTopics,
+      // Topic ids differ per class, so switching between two classes with the
+      // same number of topics still counts as a change.
+      firstVisibleId,
+    ].join('|');
+  }
+
+  let lastViewSignature = '';
+  let pollTimer = 0;
+
+  /** Timer-driven fallback for views the observer cannot see. */
+  function pollView() {
+    // Nothing here matters while the tab is in the background; resuming the tab
+    // fires visibilitychange, which scans immediately.
+    if (document.visibilityState === 'hidden') return;
+    if (!classworkLayoutEnabled) return;
+
+    // Silent SPA navigation (history.pushState) fires no event of its own.
+    if (location.pathname !== lastPath) onNavigationChange();
+
+    const signature = viewSignature();
+    const changed = signature !== lastViewSignature;
+    // Also retry while Classwork is showing but nothing has been enhanced yet,
+    // in case the first scan ran before the page was ready.
+    const stuck =
+      activeContainers.size === 0 &&
+      onClassworkContent() &&
+      document.querySelectorAll('[data-topic-id]').length > 0 &&
+      Date.now() - lastScanAt > 1500;
+
+    if (changed) lastViewSignature = signature;
+    if (changed || stuck) scheduleScan(0);
+
+    ensurePostsLoaded();
   }
 
   /**
@@ -1648,7 +1823,7 @@
     if (initial.length === 0) return;
 
     // Only the Classwork tab has posts to load, so only it gets the progress bar.
-    const showProgress = isClassworkView();
+    const showProgress = onClassworkContent();
     if (showProgress) beginSetup();
     isExpanding = true;
     injectViewMoreHidingCSS();
@@ -1658,18 +1833,15 @@
       // reactively by the MutationObserver as XHR responses arrive and new buttons appear.
       for (let round = 0; round < 20; round++) {
         // The user may navigate to another tab mid-load; stop fetching there.
-        if (!isClassworkView()) break;
+        if (!onClassworkContent()) break;
 
         const buttons = findUnclickedViewMore();
         if (buttons.length === 0) break;
 
         log(`expanding ${buttons.length} native View more button(s) (round ${round + 1})`);
 
-        // Update overlay: count total View more buttons remaining (each hides ~10 posts)
         const countBefore = currentPostCount();
-        const loadedSoFar = document.querySelectorAll('[data-stream-item-id]').length;
-        const totalExpected = loadedSoFar + buttons.length * 10;
-        updateOverlay(loadedSoFar, totalExpected);
+        updateOverlay();
 
         for (const btn of buttons) {
           btn.dataset.cppClicked = 'true';
@@ -1677,6 +1849,8 @@
           const topicNode = btn.closest('[data-topic-id]');
           const topicId = topicNode ? topicNode.dataset.topicId || topicNode.getAttribute('data-topic-id') : 'unknown';
           const attempts = expansionAttemptsByTopic.get(topicId) || 0;
+          // Bounded so a long-lived tab can never accumulate topic ids.
+          if (expansionAttemptsByTopic.size > 500) expansionAttemptsByTopic.clear();
           expansionAttemptsByTopic.set(topicId, attempts + 1);
 
           triggerClick(btn);
@@ -1692,10 +1866,6 @@
     } finally {
       isExpanding = false;
       noteSetupActivity();
-
-      // Mark progress as complete (full bar).
-      const finalCount = document.querySelectorAll('[data-stream-item-id]').length;
-      if (finalCount > 0) updateOverlay(finalCount, finalCount);
 
       // Apply the 5-post window, sort order and latest-post alignment now that
       // every post is present. This replaces the old 50 ms + 300 ms delays.
@@ -1720,9 +1890,55 @@
     if (isDragging || isExpanding || scan._running) return;
     scan._running = true;
     try {
+      // A different page or class is a fresh start: clear the per-topic click
+      // budget so a topic that had hit the cap gets loaded after all (this is
+      // what made switching classes sometimes need a full reload).
+      if (location.pathname !== lastScanPath) {
+        lastScanPath = location.pathname;
+        expansionAttemptsByTopic.clear();
+      }
+
+      // The "To review" page has its own enhancement; its rows are not topic
+      // posts and must never be turned into a 5-post scroll window.
+      updateReviewMode();
+      if (isToReviewView()) {
+        for (const container of Array.from(activeContainers)) teardown(container);
+        removeSortToggleButton();
+        return;
+      }
+
+      // Classwork Layout switched off in the popup: leave the Classwork page
+      // exactly as Google built it, and undo anything already applied.
+      if (!classworkLayoutEnabled) {
+        for (const container of Array.from(activeContainers)) teardown(container);
+        removeSortToggleButton();
+        cancelSetup();
+        return;
+      }
+
+      // Not the Classwork view: leave the page exactly as Classroom rendered it
+      // (no wrapping, no hidden buttons, no overlay). Anything we added on a
+      // previous view is undone — but only once the topic nodes are really gone.
+      // While Classroom re-renders a class, or keeps another class' view parked
+      // in the DOM, tearing down would strip a view we are about to reuse, so we
+      // simply do nothing and let the next scan finish the job.
+      if (!onClassworkContent()) {
+        // The Reverse order button lives in the global toolbar, outside the
+        // parked view, so it always goes away here.
+        removeSortToggleButton();
+        // A different view means these per-topic counters are no longer useful.
+        expansionAttemptsByTopic.clear();
+        const parkedTopics = document.querySelector('[data-topic-id]');
+        if (!parkedTopics && !isExpanding) {
+          for (const container of Array.from(activeContainers)) teardown(container);
+          cancelSetup();
+        }
+        return;
+      }
+
       ensureSortToggleButton();
 
-      const main = document.querySelector(MAIN_SELECTOR) || document.body;
+      const main = getMainElement();
       const groups = collectGroups(main);
 
       for (const [container, items] of groups) {
@@ -1754,6 +1970,8 @@
       }
     }
   }
+
+  let lastScanPath = location.pathname;
 
   let lastReport = '';
   function reportScan(groups) {
@@ -1789,27 +2007,56 @@
 
   /**
    * Check if current page is within the Classwork section.
+   *
+   * Only the Classwork tab may be enhanced. Its topic sections are the only
+   * place Classroom++ has anything to do; the class Stream, Home, Calendar,
+   * People and the To-do page share the same URL prefix for a class, so a class
+   * page is never treated as Classwork just because of its path.
    */
   function isClassworkView() {
-    // A visible topic list means the Classwork view is the one on screen. A
-    // hidden one belongs to another tab, which has nothing to load (and must
-    // never show the progress bar).
+    // A visible topic list means the Classwork view is the one on screen.
     const topicNode = document.querySelector('[data-topic-id]');
     if (topicNode && topicNode.getClientRects().length > 0) return true;
-    if (topicNode) return false;
-    const path = location.pathname;
-    if (/\/(?:w|c)\/[^/]+\/(?:t\/|w)/.test(path) || /\/w\/[^/]+/.test(path)) {
-      return true;
-    }
-    const title = (document.title || '').toLowerCase();
-    if (title.includes('classwork')) {
-      return true;
-    }
-    const activeTab = document.querySelector('[role="tab"][aria-selected="true"], a[aria-current="page"]');
-    if (activeTab && (activeTab.textContent || '').toLowerCase().includes('classwork')) {
-      return true;
+
+    // A classwork route (/c/<id>/t/all, /w/<id>/t/<topicId>) or a title that
+    // names the Classwork view is authoritative. Archived classes render the
+    // same tab with different chrome — their tab strip is missing or does not
+    // expose the selected tab — and requiring those signals made the extension
+    // skip every archived class entirely.
+    if (/\/t\/(?:all|[^/]+)\/?$/i.test(location.pathname)) return true;
+    if (/[?&]tab=classwork\b/i.test(location.search)) return true;
+    if (/(?:^|[-–—|·:]\s*)classwork\s*$/i.test(document.title || '')) return true;
+
+    // Classroom's own navigation, because a class' Stream page shares the class
+    // URL prefix with its Classwork tab.
+    const activeTab = document.querySelector('[role="tab"][aria-selected="true"]');
+    if (activeTab) return /classwork/i.test(activeTab.textContent || '');
+    const currentLink = document.querySelector('a[aria-current="page"]');
+    if (currentLink) return /classwork/i.test(currentLink.textContent || '');
+
+    // Topic nodes exist but are hidden, with no other signal: another tab is
+    // showing, so there is nothing to load (and no progress bar).
+    return false;
+  }
+
+  /** Does any topic section currently have a visible box on screen? */
+  function hasVisibleTopics() {
+    for (const topic of document.querySelectorAll('[data-topic-id]')) {
+      if (topic.getClientRects().length) return true;
     }
     return false;
+  }
+
+  /**
+   * Are we looking at something Classroom++ should enhance?
+   *
+   * Visible topic sections are unambiguous — no other Classroom view (Home,
+   * Stream, Calendar, People, To-do) renders topics — so they decide on their
+   * own, no URL or tab-name guessing. That is what makes every class behave the
+   * same, whatever the route looks like.
+   */
+  function onClassworkContent() {
+    return hasVisibleTopics() || isClassworkView();
   }
 
   let lastPath = location.pathname;
@@ -1832,6 +2079,7 @@
 
     lastPath = currentPath;
     lastWasClasswork = currentIsClasswork;
+    updateReviewMode();
     scheduleScan(100);
   }
 
@@ -1882,15 +2130,8 @@
     scheduleScan(120);
   });
 
-  // Also check URL changes periodically in case of silent SPA navigation
-  setInterval(() => {
-    if (location.pathname !== lastPath) {
-      onNavigationChange();
-    }
-  }, 500);
-
   function diagnose() {
-    const main = document.querySelector(MAIN_SELECTOR) || document.body;
+    const main = getMainElement();
     let groups = new Map();
     try {
       groups = collectGroups(main);
@@ -1901,6 +2142,9 @@
       url: location.href,
       extensionVersion: extensionVersion(),
       isClassworkView: isClassworkView(),
+      onClassworkContent: onClassworkContent(),
+      visibleTopics: hasVisibleTopics(),
+      title: document.title,
       topicsCount: document.querySelectorAll('[data-topic-id]').length,
       streamItemsCount: document.querySelectorAll('[data-stream-item-id]').length,
       roleMainFound: !!document.querySelector(MAIN_SELECTOR),
@@ -1919,9 +2163,453 @@
     };
   }
 
+  // ── To review: bulk "Mark as reviewed" ──────────────────────────────────
+
+  const REVIEW_PATH_RE = /^\/(?:u\/\d+\/)?ta\/not-reviewed/;
+  const REVIEW_ROW_SELECTOR = 'li[data-role="task-row"]';
+  const REVIEW_MARK_LABEL_RE = /^mark as reviewed\b/i;
+
+  let reviewActive = false;
+  let reviewObserver = null;
+  let reviewSyncTimer = 0;
+  let reviewBar = null;
+  let reviewBusy = false;
+  let reviewMessage = '';
+  let reviewMessageTimer = 0;
+  let reviewAnchor = null; // last row toggled on its own, for shift-ranges
+  const reviewSelected = new Set();
+
+  /**
+   * On the "To review" page each assignment is marked reviewed one at a time
+   * through its "Assignment options" menu. This mode adds a checkbox per row
+   * and a bar that marks every selected row in one go.
+   */
+  function isToReviewView() {
+    if (REVIEW_PATH_RE.test(location.pathname)) return true;
+    // Also covers fixtures and any rendered To review list regardless of URL.
+    const row = document.querySelector(REVIEW_ROW_SELECTOR);
+    return !!(row && row.getClientRects().length > 0);
+  }
+
+  function reviewRows() {
+    return Array.from(document.querySelectorAll(REVIEW_ROW_SELECTOR));
+  }
+
+  function reviewMenuItemLabel(el) {
+    return (el.getAttribute('aria-label') || el.textContent || '').trim();
+  }
+
+  /** Only rows whose options menu can mark the assignment reviewed. */
+  function rowSupportsBulkReview(row) {
+    const items = row.querySelectorAll('[role="menuitem"]');
+    if (items.length) {
+      return Array.from(items).some((item) => REVIEW_MARK_LABEL_RE.test(reviewMenuItemLabel(item)));
+    }
+    // Menus are rendered lazily on some Classroom versions.
+    return !!row.querySelector(
+      'button[aria-haspopup="menu"], [role="button"][aria-haspopup="menu"], button[aria-label*="options" i]'
+    );
+  }
+
+  function reviewRowTitle(row) {
+    const titleEl = row.querySelector('.YH8M6e, a[href*="/submissions/"] p, a[href*="/a/"] p');
+    const text = titleEl && titleEl.textContent.trim();
+    if (text) return text;
+    const trigger = row.querySelector('button[aria-label*="options" i]');
+    return ((trigger && trigger.getAttribute('aria-label')) || '')
+      .replace(/^.*?options for\s*/i, '')
+      .trim();
+  }
+
+  /** Markable rows in document order, i.e. the rows a shift-range can span. */
+  function reviewRangeRows() {
+    return reviewRows().filter((row) => !!row.querySelector('.cpp-review-box'));
+  }
+
+  /** Every row between two rows inclusive, or null if either is no longer listed. */
+  function reviewRangeBetween(from, to) {
+    const rows = reviewRangeRows();
+    const a = rows.indexOf(from);
+    const b = rows.indexOf(to);
+    if (a < 0 || b < 0) return null;
+    return rows.slice(Math.min(a, b), Math.max(a, b) + 1);
+  }
+
+  function setRowSelected(row, checked) {
+    const box = row.querySelector('.cpp-review-box');
+    if (box && box.checked !== checked) box.checked = checked;
+    if (checked) reviewSelected.add(row);
+    else reviewSelected.delete(row);
+  }
+
+  /**
+   * A plain click selects one row and becomes the anchor. Shift-click selects
+   * everything from the anchor to the clicked row, all in the clicked box's new
+   * state, so a shift-click on a checked row clears the whole span.
+   */
+  function onReviewBoxClick(row, box, event) {
+    if (reviewBusy) {
+      box.checked = reviewSelected.has(row);
+      return;
+    }
+    clearReviewMessage();
+
+    const range = event.shiftKey && reviewAnchor ? reviewRangeBetween(reviewAnchor, row) : null;
+    const affected = range || [row];
+    for (const target of affected) setRowSelected(target, box.checked);
+
+    reviewAnchor = row;
+    updateReviewBar();
+  }
+
+  function addReviewCheckbox(row) {
+    if (row.querySelector('.cpp-review-check')) return;
+    row.classList.add('cpp-review-row');
+
+    const wrap = document.createElement('span');
+    wrap.className = 'cpp-review-check';
+    wrap.addEventListener('click', (e) => e.stopPropagation());
+
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.className = 'cpp-review-box';
+    box.setAttribute('aria-label', `Select ${reviewRowTitle(row) || 'assignment'} for bulk review`);
+    box.title = 'Shift-click to select a range';
+    box.addEventListener('mousedown', (e) => e.stopPropagation());
+    box.addEventListener('click', (e) => {
+      e.stopPropagation();
+      onReviewBoxClick(row, box, e);
+    });
+
+    wrap.appendChild(box);
+    row.insertBefore(wrap, row.firstChild);
+  }
+
+  function ensureReviewBar() {
+    if (reviewBar && reviewBar.isConnected) return reviewBar;
+
+    const bar = document.createElement('div');
+    bar.className = 'cpp-review-bar';
+    bar.hidden = true;
+    bar.setAttribute('role', 'region');
+    bar.setAttribute('aria-label', 'Bulk review actions');
+
+    const allLabel = document.createElement('label');
+    allLabel.className = 'cpp-review-all';
+    const allBox = document.createElement('input');
+    allBox.type = 'checkbox';
+    allBox.className = 'cpp-review-all-box';
+    allBox.setAttribute('aria-label', 'Select every assignment shown');
+    allBox.addEventListener('change', () => {
+      clearReviewMessage();
+      reviewAnchor = null;
+      for (const row of reviewRows()) {
+        if (!row.querySelector('.cpp-review-box')) continue;
+        setRowSelected(row, allBox.checked);
+      }
+      updateReviewBar();
+    });
+    const allText = document.createElement('span');
+    allText.textContent = 'Select all';
+    allLabel.appendChild(allBox);
+    allLabel.appendChild(allText);
+
+    const status = document.createElement('span');
+    status.className = 'cpp-review-status';
+    status.setAttribute('aria-live', 'polite');
+
+    const run = document.createElement('button');
+    run.type = 'button';
+    run.className = 'cpp-review-run';
+    run.addEventListener('click', () => markSelectedAsReviewed());
+
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'cpp-review-cancel';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', () => clearReviewSelection());
+
+    bar.appendChild(allLabel);
+    bar.appendChild(status);
+    bar.appendChild(run);
+    bar.appendChild(cancel);
+    document.body.appendChild(bar);
+    reviewBar = bar;
+    return bar;
+  }
+
+  function setReviewText(el, text) {
+    if (el && el.textContent !== text) el.textContent = text;
+  }
+
+  function clearReviewMessage() {
+    reviewMessage = '';
+    clearTimeout(reviewMessageTimer);
+    reviewMessageTimer = 0;
+  }
+
+  function setReviewMessage(text, ms = 0) {
+    reviewMessage = text;
+    clearTimeout(reviewMessageTimer);
+    reviewMessageTimer = 0;
+    if (ms) {
+      reviewMessageTimer = window.setTimeout(() => {
+        reviewMessageTimer = 0;
+        reviewMessage = '';
+        updateReviewBar();
+      }, ms);
+    }
+    updateReviewBar();
+  }
+
+  function updateReviewBar() {
+    if (!reviewBar) return;
+
+    let selected = 0;
+    let selectable = 0;
+    for (const row of reviewRows()) {
+      const box = row.querySelector('.cpp-review-box');
+      if (box) selectable++;
+      const checked = reviewSelected.has(row);
+      if (box && box.checked !== checked) box.checked = checked;
+      if (box && box.disabled !== reviewBusy) box.disabled = reviewBusy;
+      row.classList.toggle('cpp-review-selected', checked);
+      if (checked) selected++;
+    }
+
+    const allBox = reviewBar.querySelector('.cpp-review-all-box');
+    const status = reviewBar.querySelector('.cpp-review-status');
+    const run = reviewBar.querySelector('.cpp-review-run');
+    const cancel = reviewBar.querySelector('.cpp-review-cancel');
+
+    const hide = selected === 0 && !reviewBusy;
+    if (reviewBar.hidden !== hide) reviewBar.hidden = hide;
+
+    if (allBox) {
+      const allChecked = selected > 0 && selected === selectable;
+      if (allBox.checked !== allChecked) allBox.checked = allChecked;
+      const mixed = selected > 0 && !allChecked;
+      if (allBox.indeterminate !== mixed) allBox.indeterminate = mixed;
+      if (allBox.disabled !== reviewBusy) allBox.disabled = reviewBusy;
+    }
+
+    if (status) {
+      const countText = selected === 1 ? '1 assignment selected' : `${selected} assignments selected`;
+      setReviewText(status, reviewMessage || countText);
+    }
+    if (run) {
+      setReviewText(run, selected === 1 ? 'Mark as reviewed' : `Mark ${selected} as reviewed`);
+      const disabled = reviewBusy || selected === 0;
+      if (run.disabled !== disabled) run.disabled = disabled;
+    }
+    if (cancel && cancel.disabled !== reviewBusy) cancel.disabled = reviewBusy;
+  }
+
+  function syncReviewRows() {
+    if (!reviewActive) return;
+
+    for (const row of reviewRows()) {
+      // Skip rows that cannot be marked reviewed, and rows inside a collapsed
+      // due-date group where the options menu cannot be opened.
+      if (!rowSupportsBulkReview(row) || !row.getClientRects().length) {
+        const existing = row.querySelector('.cpp-review-check');
+        if (existing) existing.remove();
+        row.classList.remove('cpp-review-row', 'cpp-review-selected');
+        reviewSelected.delete(row);
+        continue;
+      }
+      addReviewCheckbox(row);
+    }
+
+    for (const row of Array.from(reviewSelected)) {
+      if (!row.isConnected) reviewSelected.delete(row);
+    }
+    updateReviewBar();
+  }
+
+  function scheduleReviewSync() {
+    if (!reviewActive || reviewSyncTimer) return;
+    reviewSyncTimer = window.setTimeout(() => {
+      reviewSyncTimer = 0;
+      syncReviewRows();
+    }, 150);
+  }
+
+  function activateReviewMode() {
+    reviewActive = true;
+    document.documentElement.classList.add('cpp-review-mode');
+    ensureReviewBar();
+    if (!reviewObserver) {
+      reviewObserver = new MutationObserver(scheduleReviewSync);
+      reviewObserver.observe(document.body, { childList: true, subtree: true });
+    }
+    syncReviewRows();
+  }
+
+  function deactivateReviewMode() {
+    if (!reviewActive && !reviewBar) return;
+    reviewActive = false;
+    document.documentElement.classList.remove('cpp-review-mode');
+    reviewBusy = false;
+    reviewMessage = '';
+    clearTimeout(reviewMessageTimer);
+    reviewMessageTimer = 0;
+    clearTimeout(reviewSyncTimer);
+    reviewSyncTimer = 0;
+    if (reviewObserver) {
+      reviewObserver.disconnect();
+      reviewObserver = null;
+    }
+    reviewAnchor = null;
+    reviewSelected.clear();
+    for (const row of reviewRows()) {
+      row.classList.remove('cpp-review-row', 'cpp-review-selected');
+      const check = row.querySelector('.cpp-review-check');
+      if (check) check.remove();
+    }
+    if (reviewBar) {
+      reviewBar.remove();
+      reviewBar = null;
+    }
+  }
+
+  function updateReviewMode() {
+    // The extra checkboxes/action bar are opt-in from the extension popup, and
+    // they only ever exist on the To review tab.
+    if (bulkReviewEnabled && isToReviewView()) {
+      if (!reviewActive) activateReviewMode();
+      else syncReviewRows();
+    } else if (reviewActive) {
+      deactivateReviewMode();
+    }
+  }
+
+  function clearReviewSelection() {
+    if (reviewBusy) return;
+    clearReviewMessage();
+    reviewAnchor = null;
+    reviewSelected.clear();
+    for (const row of reviewRows()) {
+      const box = row.querySelector('.cpp-review-box');
+      if (box) box.checked = false;
+    }
+    updateReviewBar();
+  }
+
+  function waitForCondition(condition, timeout = 2000, interval = 100) {
+    return new Promise((resolve) => {
+      const started = Date.now();
+      const tick = () => {
+        let result = null;
+        try {
+          result = condition();
+        } catch (_) {}
+        if (result) return resolve(result);
+        if (Date.now() - started >= timeout) return resolve(null);
+        window.setTimeout(tick, interval);
+      };
+      tick();
+    });
+  }
+
+  function findReviewMenuTrigger(row) {
+    const buttons = Array.from(
+      row.querySelectorAll(
+        'button[aria-haspopup="menu"], [role="button"][aria-haspopup="menu"], button[aria-label*="options" i]'
+      )
+    );
+    return (
+      buttons.find((btn) => /options/i.test(btn.getAttribute('aria-label') || '')) ||
+      buttons[0] ||
+      null
+    );
+  }
+
+  function findMarkReviewedItem(row) {
+    const direct = Array.from(row.querySelectorAll('button, [role="button"]')).find((el) =>
+      REVIEW_MARK_LABEL_RE.test((el.getAttribute('aria-label') || '').trim())
+    );
+    if (direct) return direct;
+
+    const isVisible = (el) => !!el.getClientRects().length;
+    const inRow = Array.from(row.querySelectorAll('[role="menuitem"]')).filter((el) =>
+      REVIEW_MARK_LABEL_RE.test(reviewMenuItemLabel(el))
+    );
+    const visibleInRow = inRow.find(isVisible);
+    if (visibleInRow) return visibleInRow;
+
+    // Open menus can be hoisted to the end of <body> instead of staying inline.
+    for (const el of document.querySelectorAll('[role="menuitem"]')) {
+      if (!REVIEW_MARK_LABEL_RE.test(reviewMenuItemLabel(el))) continue;
+      if (isVisible(el) && !el.closest(REVIEW_ROW_SELECTOR)) return el;
+    }
+    // Closed menus keep their items in the DOM; the caller opens the menu first.
+    return inRow[0] || null;
+  }
+
+  /** Open a row's options menu and click its "Mark as reviewed" action. */
+  async function markRowAsReviewed(row) {
+    if (!row.isConnected) return false;
+
+    let item = findMarkReviewedItem(row);
+    if (!item || !item.getClientRects().length) {
+      const trigger = findReviewMenuTrigger(row);
+      if (trigger) {
+        triggerClick(trigger);
+        item = await waitForCondition(() => {
+          const found = findMarkReviewedItem(row);
+          return found && found.getClientRects().length ? found : null;
+        }, 1500);
+      }
+    }
+    if (!item) return false;
+
+    triggerClick(item);
+
+    // Classroom drops the row from "To review" once the change is recorded
+    // (some versions instead swap the row's action to "Mark as not reviewed").
+    const finished = await waitForCondition(
+      () => !row.isConnected || !rowSupportsBulkReview(row),
+      5000
+    );
+    return !!finished;
+  }
+
+  async function markSelectedAsReviewed() {
+    if (reviewBusy) return;
+    const rows = reviewRows().filter((row) => reviewSelected.has(row));
+    if (rows.length === 0) return;
+
+    reviewBusy = true;
+    updateReviewBar();
+
+    let marked = 0;
+    let failed = 0;
+    for (let i = 0; i < rows.length; i++) {
+      if (!isToReviewView()) break;
+      setReviewMessage(`Marking ${i + 1} of ${rows.length}…`);
+      const ok = await markRowAsReviewed(rows[i]);
+      if (ok) {
+        marked++;
+        reviewSelected.delete(rows[i]);
+      } else {
+        failed++;
+      }
+    }
+
+    reviewBusy = false;
+    if (!reviewActive) return; // navigated away mid-run
+
+    if (failed > 0) setReviewMessage(`${failed} of ${rows.length} could not be marked as reviewed.`, 6000);
+    else setReviewMessage(`Marked ${marked} as reviewed.`, 4000);
+  }
+
+  // ── End To review bulk mode ──────────────────────────────────────────────
+
   function init() {
     loadInitialSettings();
-    injectViewMoreHidingCSS();
+    // Nothing is ever fetched or hidden outside the Classwork tab.
+    if (isClassworkView()) injectViewMoreHidingCSS();
     setupGlobalDragHandlers();
     observer.observe(document.documentElement, { childList: true, subtree: true });
     window.addEventListener('resize', () => {
@@ -1937,6 +2625,22 @@
     });
     window.addEventListener('popstate', onNavigationChange);
     window.addEventListener('hashchange', onNavigationChange);
+
+    // One timer covers both jobs: noticing a Classwork view that appeared
+    // without a mutation we could observe, and finishing posts Classroom still
+    // holds behind "View more". It is paused while the tab is in the background.
+    pollTimer = window.setInterval(pollView, 1200);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') pollView();
+    });
+    // Release the timer if the page is put in the back/forward cache.
+    window.addEventListener('pagehide', () => {
+      clearInterval(pollTimer);
+      pollTimer = 0;
+    });
+    window.addEventListener('pageshow', () => {
+      if (!pollTimer) pollTimer = window.setInterval(pollView, 1200);
+    });
 
     // Listen for genuine user tab clicks (e.g. clicking Classwork tab)
     document.addEventListener(
@@ -1996,6 +2700,23 @@
     expandAllTopics: triggerAutoExpansion,
     triggerAutoExpansion,
     requestExpansion,
+    countLoadedPosts,
+    isClassworkView,
+    isToReviewView,
+    markSelectedAsReviewed,
+    setBulkReviewEnabled(on) {
+      bulkReviewEnabled = on !== false;
+      updateReviewMode();
+    },
+    isBulkReviewEnabled: () => bulkReviewEnabled,
+    setClassworkLayoutEnabled(on) {
+      classworkLayoutEnabled = on !== false;
+      scan();
+    },
+    isClassworkLayoutEnabled: () => classworkLayoutEnabled,
+    ensurePostsLoaded,
+    pollView,
+    viewSignature,
     syncWindowHeight,
     toggleSortOrder,
     getIsReversed: () => isReversed,

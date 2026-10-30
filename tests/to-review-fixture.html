@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>To review - Classroom++ test fixture</title>
+<link rel="stylesheet" href="../src/content.css">
+<style>
+  body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+  main { max-width: 900px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 22px; margin: 0 0 12px; }
+  .due-group h2 { font-size: 13px; color: #5f6368; margin: 18px 0 6px; }
+  ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; row-gap: 8px; }
+  .task-row { display: flex; align-items: center; gap: 12px; height: 64px; background: #f1f3f4; border-radius: 8px; padding: 0 12px; }
+  .task-row a { color: #1a73e8; text-decoration: none; }
+  .task-row .YH8M6e { margin: 0; font-weight: 500; color: #202124; }
+  .task-row .due { margin: 2px 0 0; font-size: 12px; color: #5f6368; }
+  .hmNEpf { margin-left: auto; }
+  .menu-panel { position: absolute; background: #fff; border: 1px solid #dadce0; border-radius: 8px; box-shadow: 0 2px 8px rgba(60,64,67,.3); padding: 4px 0; z-index: 10; }
+  .menu-panel ul { list-style: none; margin: 0; padding: 0; }
+  .menu-panel li { padding: 8px 16px; font-size: 14px; cursor: pointer; white-space: nowrap; }
+  .menu-panel li:hover { background: #f1f3f4; }
+  #results { white-space: pre-wrap; font-family: monospace; padding: 16px; font-size: 14px; }
+</style>
+</head>
+<body>
+<main role="main">
+  <h1>To review</h1>
+
+  <section class="due-group">
+    <h2>No due date</h2>
+    <ol id="group-a"></ol>
+  </section>
+
+  <section class="due-group">
+    <h2>Due Oct 30</h2>
+    <ol id="group-b"></ol>
+  </section>
+</main>
+
+<div id="results">PENDING</div>
+
+<script>
+// Rows mirror Google Classroom's "To review" markup: an `li[data-role="task-row"]`
+// holding the assignment link plus an "Assignment options" menu whose
+// "Mark as reviewed" item is what the extension must click.
+window.__menuOpens = 0;
+window.__itemClicks = 0;
+
+function buildRow(opts) {
+  const li = document.createElement('li');
+  li.className = 'task-row';
+  li.setAttribute('data-role', 'task-row');
+  li.dataset.itemId = opts.id;
+  li.innerHTML = `
+    <span class="dNKuRb IQKMse"></span>
+    <div class="XQMoHb">
+      <a class="nUg0Te" href="/c/ODc3MjQ4NTU0NTU5/a/${opts.id}/submissions/by-status/and-sort-name/list">
+        <div class="il4hc">
+          <p class="YH8M6e">${opts.title}</p>
+          <p class="due">Innovation 10 (Class of 2027) • Posted Oct 16</p>
+        </div>
+      </a>
+    </div>
+    <div class="hmNEpf" data-mark-as="2">
+      <div class="menu-wrap">
+        <div>
+          <button type="button" aria-label="Assignment options for ${opts.title}" aria-haspopup="menu" aria-expanded="false">⋮</button>
+        </div>
+        <div class="menu-panel" hidden>
+          <ul role="menu" aria-label="Assignment options menu">
+            <li role="menuitem" aria-label="${opts.menuLabel} for ${opts.title}">${opts.menuLabel}</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const trigger = li.querySelector('button[aria-haspopup="menu"]');
+  const panel = li.querySelector('.menu-panel');
+  const item = li.querySelector('[role="menuitem"]');
+
+  trigger.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const open = panel.hidden;
+    panel.hidden = !open;
+    trigger.setAttribute('aria-expanded', String(open));
+    window.__menuOpens++;
+  });
+
+  item.addEventListener('click', () => {
+    window.__itemClicks++;
+    if (opts.menuLabel !== 'Mark as reviewed') return;
+    // Classroom records the change and then removes the row from the list.
+    panel.hidden = true;
+    trigger.setAttribute('aria-expanded', 'false');
+    setTimeout(() => li.remove(), 60);
+  });
+
+  return li;
+}
+
+const groupA = document.getElementById('group-a');
+const groupB = document.getElementById('group-b');
+
+groupA.appendChild(buildRow({ id: '1001', title: 'Territorial Acknowledgement', menuLabel: 'Mark as reviewed' }));
+groupA.appendChild(buildRow({ id: '1002', title: 'Companion to a Territorial Acknowledgement', menuLabel: 'Mark as reviewed' }));
+groupA.appendChild(buildRow({ id: '1003', title: 'Photo Dump!', menuLabel: 'Mark as reviewed' }));
+
+groupB.appendChild(buildRow({ id: '1004', title: 'Essay Formatting', menuLabel: 'Mark as reviewed' }));
+groupB.appendChild(buildRow({ id: '1005', title: 'Course Feedback December', menuLabel: 'Mark as reviewed' }));
+// Already reviewed: its menu offers the opposite action, so it must not get a checkbox.
+groupB.appendChild(buildRow({ id: '1006', title: 'Provincial Literacy Assessment', menuLabel: 'Mark as not reviewed' }));
+</script>
+<script src="../src/content.js"></script>
+<script>
+(function () {
+  const lines = [];
+  const ok = (name, cond, detail) => lines.push(`${cond ? 'PASS' : 'FAIL'} ${name}${detail ? ' — ' + detail : ''}`);
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const waitFor = async (cond, timeout = 8000) => {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      if (cond()) return true;
+      await wait(50);
+    }
+    return cond();
+  };
+
+  async function run() {
+    const api = window.__classroomPlusPlus;
+    ok('test hook exposed', !!api);
+
+    const markableRows = () => Array.from(document.querySelectorAll('li[data-role="task-row"]'))
+      .filter((row) => row.querySelector('.cpp-review-box'));
+    const bar = () => document.querySelector('.cpp-review-bar');
+    const barStatus = () => {
+      const el = document.querySelector('.cpp-review-status');
+      return el ? el.textContent : '';
+    };
+    const barRun = () => document.querySelector('.cpp-review-run');
+    const allBox = () => document.querySelector('.cpp-review-all-box');
+
+    await waitFor(() => markableRows().length > 0);
+    await wait(100);
+
+    // 1. Every not-yet-reviewed row gets a checkbox; the reviewed row does not.
+    ok('to review view detected', !!api && api.isToReviewView() === true);
+    ok('checkbox injected into each markable row', markableRows().length === 5,
+      `got ${markableRows().length}`);
+    ok('rows marked with the selection class',
+      document.querySelectorAll('.cpp-review-row').length === 5,
+      `got ${document.querySelectorAll('.cpp-review-row').length}`);
+    const reviewedRow = document.querySelector('li[data-item-id="1006"]');
+    ok('already-reviewed row is skipped', !!reviewedRow && !reviewedRow.querySelector('.cpp-review-box'));
+
+    // 1b. Bulk review is a popup setting: off means no checkboxes and no bar.
+    const reviewModeOn = () => document.documentElement.classList.contains('cpp-review-mode');
+    ok('review styles are scoped to review mode only', reviewModeOn());
+    api.setBulkReviewEnabled(false);
+    await wait(60);
+    ok('disabling bulk review removes the checkboxes', markableRows().length === 0,
+      `got ${markableRows().length}`);
+    ok('disabling bulk review removes the action bar', !bar());
+    ok('disabling bulk review drops the review-mode class', !reviewModeOn());
+    api.setBulkReviewEnabled(true);
+    await waitFor(() => markableRows().length === 5);
+    ok('re-enabling bulk review restores the checkboxes', markableRows().length === 5,
+      `got ${markableRows().length}`);
+
+    // 2. The To review list is not converted into a Classwork scroll window.
+    ok('to review rows are not wrapped in a scroll window',
+      !document.querySelector('.cpp-scroll-window'));
+    ok('no View all toggle on the To review page', !document.querySelector('.cpp-toggle'));
+    ok('no loading overlay on the To review page',
+      !document.querySelector('.cpp-loading-overlay'));
+
+    // 3. The bar appears only once something is selected.
+    ok('action bar starts hidden', !!bar() && bar().hidden === true);
+    const firstTwo = markableRows().slice(0, 2);
+    firstTwo[0].querySelector('.cpp-review-box').click();
+    firstTwo[1].querySelector('.cpp-review-box').click();
+    await wait(50);
+    ok('action bar appears after selecting rows', !!bar() && bar().hidden === false);
+    ok('bar counts the selection', barStatus() === '2 assignments selected', `got "${barStatus()}"`);
+    ok('primary action names the count', barRun().textContent === 'Mark 2 as reviewed',
+      `got "${barRun().textContent}"`);
+    ok('selected rows are highlighted',
+      document.querySelectorAll('.cpp-review-selected').length === 2,
+      `got ${document.querySelectorAll('.cpp-review-selected').length}`);
+
+    // 3b. Shift-click selects every consecutive row between anchor and target.
+    // A shift-click: the browser toggles the box, then dispatches the click.
+    const shiftClick = (row) =>
+      row.querySelector('.cpp-review-box')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }));
+    const rows = markableRows();
+    document.querySelector('.cpp-review-cancel').click();
+    await wait(50);
+    ok('cancel clears the selection', barStatus() === '' || bar().hidden === true);
+
+    shiftClick(rows[0]);
+    await wait(20);
+    ok('shift-click with no anchor behaves like a normal click',
+      document.querySelectorAll('.cpp-review-selected').length === 1,
+      `got ${document.querySelectorAll('.cpp-review-selected').length}`);
+
+    document.querySelector('.cpp-review-cancel').click();
+    await wait(20);
+    rows[0].querySelector('.cpp-review-box').click();
+    shiftClick(rows[4]);
+    await wait(50);
+    ok('shift-click selects the whole range, across due-date groups',
+      document.querySelectorAll('.cpp-review-selected').length === 5,
+      `got ${document.querySelectorAll('.cpp-review-selected').length}`);
+    ok('shift-range bar count', barStatus() === '5 assignments selected', `got "${barStatus()}"`);
+    ok('shift-range keeps select-all in the checked state',
+      allBox().checked === true && allBox().indeterminate === false);
+
+    shiftClick(rows[0]);
+    await wait(50);
+    ok('shift-click on a checked end row clears the whole range',
+      markableRows().every((row) => !row.querySelector('.cpp-review-box').checked),
+      `got ${document.querySelectorAll('.cpp-review-selected').length} still selected`);
+    ok('bar hides once the range is cleared', bar().hidden === true);
+
+    // Back to the two-row selection used below, via a plain click (new anchor).
+    rows[0].querySelector('.cpp-review-box').click();
+    rows[1].querySelector('.cpp-review-box').click();
+    await wait(50);
+    ok('plain clicks after a shift-range select only one row each',
+      document.querySelectorAll('.cpp-review-selected').length === 2,
+      `got ${document.querySelectorAll('.cpp-review-selected').length}`);
+
+    // 4. Marking the selection reviewed removes those rows and nothing else.
+    const remainingBefore = document.querySelectorAll('li[data-role="task-row"]').length;
+    barRun().click();
+    await waitFor(() => !document.getElementById('group-a').querySelector('li[data-item-id="1001"]') &&
+      !document.getElementById('group-a').querySelector('li[data-item-id="1002"]'));
+    ok('both selected rows were marked reviewed',
+      document.querySelectorAll('li[data-role="task-row"]').length === remainingBefore - 2,
+      `rows ${remainingBefore} -> ${document.querySelectorAll('li[data-role="task-row"]').length}`);
+    ok('unselected rows stay in the list',
+      !!document.querySelector('li[data-item-id="1003"]') &&
+      !!document.querySelector('li[data-item-id="1004"]') &&
+      !!document.querySelector('li[data-item-id="1005"]'));
+    ok('each mark opened the row options menu', window.__menuOpens >= 2,
+      `${window.__menuOpens} menu open(s)`);
+    ok('each mark clicked a Mark as reviewed item', window.__itemClicks >= 2,
+      `${window.__itemClicks} item click(s)`);
+    await waitFor(() => bar().hidden === true);
+    ok('bar hides again after the selection is cleared', bar().hidden === true);
+
+    // 5. Select all covers every remaining markable row (and never the reviewed one).
+    allBox().click();
+    await wait(50);
+    ok('select all checks every markable row', markableRows().every((row) => row.querySelector('.cpp-review-box').checked));
+    ok('select all ignores the already-reviewed row', !reviewedRow.querySelector('.cpp-review-box'));
+    ok('bar counts select-all', barStatus() === '3 assignments selected', `got "${barStatus()}"`);
+    ok('select-all action label', barRun().textContent === 'Mark 3 as reviewed',
+      `got "${barRun().textContent}"`);
+
+    barRun().click();
+    await waitFor(() => document.querySelectorAll('li[data-role="task-row"]').length === 1, 12000);
+    ok('all selected rows marked in one action',
+      document.querySelectorAll('li[data-role="task-row"]').length === 1,
+      `left ${document.querySelectorAll('li[data-role="task-row"]').length}`);
+    ok('only the already-reviewed row remains', !!document.querySelector('li[data-item-id="1006"]'));
+    await waitFor(() => bar().hidden === true);
+    ok('bar hides after the bulk run', bar().hidden === true);
+
+    const failed = lines.filter((l) => l.startsWith('FAIL')).length;
+    lines.push(failed === 0 ? 'ALL TESTS PASSED' : `${failed} TEST(S) FAILED`);
+    document.getElementById('results').textContent = lines.join('\n');
+  }
+
+  if (document.readyState === 'complete') {
+    setTimeout(run, 400);
+  } else {
+    window.addEventListener('load', () => setTimeout(run, 400));
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
-  const toggleReverse = document.getElementById('toggleReverseOrder');
-  const toggleCentering = document.getElementById('toggleSmartCentering');
+  const toggleLayout = document.getElementById('toggleClassworkLayout');
+  const toggleBulkReview = document.getElementById('toggleBulkReview');
   const statusEl = document.getElementById('statusMessage');
   const tipBtn = document.getElementById('tipBtn');
   const welcomeLink = document.getElementById('welcomeLink');
@@ -32,21 +32,43 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Load saved settings from sync storage
-  chrome.storage.sync.get(['isReversed', 'smartCentering'], (result) => {
-    if (toggleReverse) {
-      toggleReverse.checked = result.isReversed === true;
+  chrome.storage.sync.get(['classworkLayout', 'smartCentering', 'bulkReview'], (result) => {
+    if (toggleLayout) {
+      // `smartCentering` is the key this switch used before it covered the
+      // whole Classwork layout; honour it for people who already set it.
+      const saved = typeof result.classworkLayout === 'boolean' ? result.classworkLayout : result.smartCentering;
+      toggleLayout.checked = saved !== false; // default true
     }
-    if (toggleCentering) {
-      toggleCentering.checked = result.smartCentering !== false; // default true
+    if (toggleBulkReview) {
+      toggleBulkReview.checked = result.bulkReview !== false; // default true
     }
   });
 
-  // Handle setting updates
-  function saveSettings() {
-    const isReversed = toggleReverse ? toggleReverse.checked : false;
-    const smartCentering = toggleCentering ? toggleCentering.checked : true;
+  // Settings are read once when the page loads, so every open Classroom tab has
+  // to be refreshed for a change to apply. Bursts of toggles reload only once.
+  let reloadTimer = 0;
+  function reloadClassroomTabs() {
+    clearTimeout(reloadTimer);
+    reloadTimer = setTimeout(() => {
+      reloadTimer = 0;
+      if (!chrome.tabs || !chrome.tabs.query) return;
+      chrome.tabs.query({ url: 'https://classroom.google.com/*' }, (tabs) => {
+        for (const tab of tabs || []) {
+          if (typeof tab.id === 'number') chrome.tabs.reload(tab.id);
+        }
+      });
+    }, 150);
+  }
 
-    chrome.storage.sync.set({ isReversed, smartCentering }, () => {
+  // Handle setting updates. Reverse Order has no switch here (its button lives
+  // on the Classwork page), so only the switches that exist are written — this
+  // must never overwrite isReversed with a default.
+  function saveSettings() {
+    const settings = {};
+    if (toggleLayout) settings.classworkLayout = toggleLayout.checked;
+    if (toggleBulkReview) settings.bulkReview = toggleBulkReview.checked;
+
+    chrome.storage.sync.set(settings, () => {
       if (statusEl) {
         statusEl.textContent = 'Settings saved and synced!';
         statusEl.style.color = '#16803c';
@@ -55,14 +77,15 @@ document.addEventListener('DOMContentLoaded', () => {
           statusEl.style.color = '#718096';
         }, 1800);
       }
+      reloadClassroomTabs();
     });
   }
 
-  if (toggleReverse) {
-    toggleReverse.addEventListener('change', saveSettings);
+  if (toggleLayout) {
+    toggleLayout.addEventListener('change', saveSettings);
   }
-  if (toggleCentering) {
-    toggleCentering.addEventListener('change', saveSettings);
+  if (toggleBulkReview) {
+    toggleBulkReview.addEventListener('change', saveSettings);
   }
 });
 

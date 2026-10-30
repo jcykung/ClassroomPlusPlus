@@ -278,14 +278,16 @@
 
 /* ── End loading overlay ───────────────────────────────────────────────── */
 
-/* Classroom++ — Visually hide Google Classroom's native "View more" button
+/* Classroom++ — Visually hide a native "View more" button we manage.
  * We keep it rendered at 0 opacity with 1px clipped off-screen so Google's
  * Wiz controllers mount and accept our automated click, while remaining
  * completely invisible to the user and taking zero space in the layout.
- * We avoid display:none so Google's controllers can complete batch fetches. */
-.Mvr5Ef,
-button[jsname="t6Kl7b"],
-button[aria-label*="View more" i],
+ * We avoid display:none so Google's controllers can complete batch fetches.
+ *
+ * Only the button Classroom++ has explicitly claimed (it adds the class right
+ * before clicking) is affected. Never match Google's own classes, attributes
+ * or "View more" labels here: the same markup appears on Stream, People and
+ * To review, and hiding it there breaks those tabs' layouts. */
 .cpp-native-view-more {
   position: absolute !important;
   opacity: 0 !important;
@@ -314,3 +316,127 @@ body.cpp-dragging-active .cpp-scroll-window {
   display: none !important;
 }
 
+
+/* ── To review: bulk selection ────────────────────────────────────────────
+ *
+ * Every rule below is scoped to html.cpp-review-mode, which is only set while
+ * the bulk-review UI is mounted on the To review tab. Nothing here can match
+ * on Stream, People, the To-do page or any other Classroom tab.
+ */
+
+/* Room for the checkbox injected at the start of each assignment row. */
+html.cpp-review-mode .cpp-review-row {
+  position: relative !important;
+  padding-left: 40px !important;
+}
+
+html.cpp-review-mode .cpp-review-check {
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  z-index: 2;
+}
+
+html.cpp-review-mode .cpp-review-box,
+html.cpp-review-mode .cpp-review-all-box {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: #1a73e8;
+  cursor: pointer;
+}
+
+html.cpp-review-mode .cpp-review-row.cpp-review-selected {
+  background-color: #e8f0fe !important;
+}
+
+/* Floating action bar, shown only while something is selected. */
+html.cpp-review-mode .cpp-review-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 12px 20px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 3px 12px rgb(60 64 67 / 0.3);
+  font-family: "Google Sans", "Google Sans Text", Roboto, Arial, sans-serif;
+  font-size: 14px;
+  color: #3c4043;
+  z-index: 99997;
+  max-width: min(640px, calc(100vw - 32px));
+}
+
+html.cpp-review-mode .cpp-review-bar[hidden] {
+  display: none !important;
+}
+
+html.cpp-review-mode .cpp-review-all {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+html.cpp-review-mode .cpp-review-status {
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html.cpp-review-mode .cpp-review-run {
+  background: #1a73e8;
+  color: #fff;
+  border: 0;
+  border-radius: 999px;
+  padding: 9px 18px;
+  font: inherit;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+html.cpp-review-mode .cpp-review-run:hover {
+  background: #1765cc;
+}
+
+html.cpp-review-mode .cpp-review-run:disabled {
+  background: #c6dafc;
+  cursor: default;
+}
+
+html.cpp-review-mode .cpp-review-cancel {
+  background: transparent;
+  border: 0;
+  color: #1a73e8;
+  font: inherit;
+  font-weight: 500;
+  padding: 8px 4px;
+  cursor: pointer;
+}
+
+html.cpp-review-mode .cpp-review-cancel:disabled {
+  color: #9aa0a6;
+  cursor: default;
+}
+
+@media (max-width: 600px) {
+  html.cpp-review-mode .cpp-review-bar {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px 14px;
+  }
+}

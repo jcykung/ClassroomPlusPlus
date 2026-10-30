@@ -1,53 +1,105 @@
 # Classroom++
 
-A Chrome extension that enhances the **Classwork** section of Google Classroom.
+A Chrome extension (Manifest V3) that makes the **Classwork** tab of Google Classroom easier to
+work with and speeds up marking on the **To review** page.
+
+Not affiliated with, endorsed by, or sponsored by Google. Google Classroom is a trademark of
+Google LLC.
 
 ## What it does
 
-1. **Limit 5 posts visible per Topic by default:**
-   - Topics with more than 5 posts are limited to a clean 5-post visible window.
-   - Click the **"View all"** button under any Topic to expand and show all posts in that topic. Click **"View fewer"** to collapse back down.
-   - Topics with 5 or fewer posts are left completely untouched.
+### Classwork layout
 
-2. **Scrollable Topic sections:**
-   - Each Topic section is scrollable independently so you can smoothly scroll through all posts in each topic without the whole page shifting (`overscroll-behavior: contain`).
+- **5-post topic windows.** Topics with more than 5 posts become their own scroll area showing 5
+  posts at a time; shorter topics are left untouched. **View all** / **View fewer** expands a
+  topic in place.
+- **Everything loaded.** Google's hidden "View more" batches are fetched automatically, so the
+  newest published post is always present and every post is scrollable.
+- **Newest post centred.** Each topic scrolls so the latest *published* post (not a draft) sits in
+  the middle of the 5-post window, with upcoming drafts right below it.
+- **Reverse order.** A button placed to the left of Google's "Collapse all" flips the post order in
+  every topic; its look is copied from that button at runtime.
+- **Editing stays visible.** Opening a post grows its scroll area by exactly the amount the post
+  grew, so the whole post is visible.
+- **Works in every class.** Enhancement is applied in any class, archived ones included. A class
+  you have already visited keeps its layout, so returning to it is instant and nothing is fetched
+  twice.
 
-3. **Latest post (not drafts) centered as the 3rd post of 5:**
-   - By default, whenever you open or navigate to the **Classwork** tab (or exit and come back), each Topic automatically shows 5 posts and scrolls so that the **latest published post (not drafts)** is aligned to the **middle** of the scroll window (the 3rd post of the 5 showing).
-   - This keeps what came before (previous 2 posts) and what needs to be edited and posted next (upcoming drafts) immediately visible in context!
+### To review: bulk select
 
-4. **Automatic Unhiding & Removal of Google's "View more" buttons:**
-   - Google Classroom natively truncates topic sections and hides older posts behind a "View more" link. Classroom++ automatically expands all hidden posts in every topic before applying the scroll window, ensuring you can scroll through *all* your posts.
-   - Google's native "View more" buttons are cleanly hidden and replaced with Classroom++'s custom "View all" toggle.
+- A checkbox on every assignment that can be marked reviewed, with **Select all** and a floating
+  action bar.
+- **Mark N as reviewed** clicks the same "Mark as reviewed" menu item you would click, one row at a
+  time, then reports how many were marked.
+- **Shift-click** selects a continuous range of rows; shift-clicking a checked row clears the range.
+- Rows already reviewed, and the To-do sidebar, are never touched.
 
-5. **Reliable Single-Page App (SPA) Detection:**
-   - Detects Classroom topic headers (`h2`), `[data-topic-id]`, `[data-stream-item-id]`, and deep links seamlessly.
-   - Hooks into SPA navigation (`pushState`, `popstate`, `hashchange`, and tab clicks) so that when you exit and return to Classwork, topics cleanly reset to their default 5-post centered view.
+### Settings
 
-## Install (Developer mode)
+Two switches in the popup, stored in `chrome.storage.sync`:
 
-1. Open `chrome://extensions` in Google Chrome.
-2. Enable **Developer mode** (toggle in the top-right corner).
-3. Click **Load unpacked** and select this directory (the one containing `manifest.json`).
-4. Navigate to any Google Classroom **Classwork** page (`classroom.google.com`).
+| Switch | Effect |
+| --- | --- |
+| **Classwork Layout** | Master switch for every Classwork change above |
+| **Bulk Select on To Review** | The checkboxes and action bar on the To review page |
 
-> **Tip:** Whenever you make code updates, visit `chrome://extensions` and click the ⟳ reload button on Classroom++.
+Changing a switch refreshes any open Classroom tabs so the new layout is live immediately.
+
+## Scope and privacy
+
+- Runs **only** on `https://classroom.google.com/*`; requests only `storage` plus that one host.
+- Home, Stream, Calendar, People and the To-do page are left exactly as Google renders them.
+- No analytics, no accounts, no network requests, no remote code or fonts — everything ships in the
+  package and runs locally. See [PRIVACY.md](PRIVACY.md).
+
+## Install (developer mode)
+
+1. Open `chrome://extensions` and enable **Developer mode**.
+2. Click **Load unpacked** and select this directory (the one containing `manifest.json`).
+3. Open any Google Classroom **Classwork** page.
+
+> After changing code, press the ⟳ reload button on the Classroom++ card, then refresh Classroom.
+
+## Testing
+
+```sh
+sh tests/run.sh
+```
+
+Runs four headless-Chrome fixture suites and prints PASS/FAIL for each assertion:
+
+| Fixture | Covers |
+| --- | --- |
+| `tests/classwork-fixture.html` | Windows, centring, drafts, View all/fewer, collapse anchoring, loading labels, class switches, parked views, the layout switch |
+| `tests/to-review-fixture.html` | Bulk select, shift-range, select all, marking reviewed, the popup switch |
+| `tests/stream-fixture.html` | Class Stream is never enhanced; parked Classwork views keep their layout |
+| `tests/archived-classwork-fixture.html` | Archived class with no topics and no selected tab is still enhanced |
+
+## Packaging for the Chrome Web Store
+
+```sh
+sh tools/package.sh     # -> dist/classroom-plus-plus-<version>.zip
+```
+
+The archive contains only runtime files (manifest, popup, background, onboarding, changelog,
+icons, `src/`). Test fixtures, screenshots, developer docs and local Classroom captures are
+excluded.
+
+Submission copy, permission justifications, data-usage answers and the review checklist live in
+[`store/listing.md`](store/listing.md).
 
 ## Files
 
 | Path | Purpose |
-| ---- | ------- |
-| `manifest.json` | Extension manifest (Manifest V3). |
-| `src/content.js` | Topic detection, draft exclusion, middle alignment, and View all toggle. |
-| `src/content.css` | Injected styles for scroll window, scrollbars, chevrons, and toggle button. |
-| `icons/icon*.png` | Toolbar and extension icons. |
-| `tests/classwork-fixture.html` | Interactive test fixture with automated verification suite. |
-
-## Verification & Testing
-
-Open `tests/classwork-fixture.html` in Chrome or run the test fixture to verify all test suites:
-- Topic height fits exactly 5 posts.
-- Draft items are excluded from latest-post calculation.
-- Latest published post is centered as the 3rd of 5 visible posts.
-- "View all" expands all posts and toggles to "View fewer".
-- Navigation resets restore the 5-post centered view.
+| --- | --- |
+| `manifest.json` | Manifest V3 definition, permissions, CSP |
+| `background.js` | Install/update lifecycle (defaults, welcome screen, changelog) |
+| `src/content.js` | All page behaviour: detection, 5-post windows, loading, To review bulk select |
+| `src/content.css` | Scoped styles for the windows, toggles, overlay and To review UI |
+| `popup.html` / `popup.js` | The extension popup with the two switches |
+| `onboarding.html` / `onboarding.js` | Welcome screen |
+| `changelog.html` / `changelog.js` | Changelog |
+| `icons/` | 16/32/48/128 px icons |
+| `tests/` | Fixture suites and the runner |
+| `tools/package.sh` | Builds the Web Store zip |
+| `tools/make-icons.py` | Regenerates the icon set |

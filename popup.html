@@ -2,15 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
     <style>
       body {
         width: 360px;
         margin: 0;
-        font-family: "Inter", sans-serif;
+        font-family: Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
         background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%);
         color: #333;
         padding: 16px 18px 14px 18px;
@@ -59,7 +55,7 @@
         color: #fff;
         border: none;
         border-radius: 20px;
-        font-family: "Inter", sans-serif;
+        font-family: Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
         font-size: 12px;
         font-weight: 600;
         cursor: pointer;
@@ -275,32 +271,32 @@
       </button>
     </div>
 
-    <!-- Setting 1: Reverse Order -->
+    <!-- Setting 1: Classwork Layout (all Classwork enhancements) -->
     <div class="card">
       <div class="label">
-        Reverse Order
+        Classwork Layout
         <span
           class="info-icon"
-          data-tooltip="Reverses the display order of posts in all topic sections, placing newly created drafts at the top."
+          data-tooltip="Every Classwork change in one switch: topics become scrollable 5-post windows, all posts load up front, the newest published post is centered, and View all / View fewer plus the Reverse order button are added. Turn it off to leave Classwork exactly as Google built it."
         ></span>
       </div>
       <label class="switch">
-        <input type="checkbox" id="toggleReverseOrder" />
+        <input type="checkbox" id="toggleClassworkLayout" checked />
         <span class="slider"></span>
       </label>
     </div>
 
-    <!-- Setting 2: Smart Centering -->
+    <!-- Setting 2: Bulk Select on To Review -->
     <div class="card">
       <div class="label">
-        Smart Centering
+        Bulk Select on To Review
         <span
           class="info-icon"
-          data-tooltip="Automatically scrolls each topic so the latest published post is aligned to the middle, next to upcoming drafts."
+          data-tooltip="Adds a checkbox to each assignment on the To review page, with Select all and a floating bar that marks the whole batch as reviewed in one go. Shift-click after ticking one box to grab every row in between."
         ></span>
       </div>
       <label class="switch">
-        <input type="checkbox" id="toggleSmartCentering" checked />
+        <input type="checkbox" id="toggleBulkReview" checked />
         <span class="slider"></span>
       </label>
     </div>
@@ -311,7 +307,7 @@
 
     <div class="footer-bar">
       <a href="#" class="welcome-link" id="welcomeLink">Show Welcome Screen</a>
-      <a href="#" class="version-link" id="versionLink">v. 0.2.1</a>
+      <a href="#" class="version-link" id="versionLink">v. 1.0.0</a>
     </div>
 
     <script src="popup.js"></script>

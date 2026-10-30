@@ -180,6 +180,17 @@ if (gBtn) {
   }, { once: true });
 }
 </script>
+<script>
+// Record every loading-bar label shown during the initial bulk load.
+window.__overlayTexts = [];
+window.__overlayBarSamples = [];
+new MutationObserver(() => {
+  const t = document.querySelector('.cpp-loading-text');
+  if (t && t.textContent) window.__overlayTexts.push(t.textContent);
+  const bar = document.querySelector('.cpp-loading-bar');
+  if (bar) window.__overlayBarSamples.push({ hasValue: bar.hasAttribute('value') });
+}).observe(document.body, { childList: true, subtree: true, characterData: true });
+</script>
 <script src="../src/content.js"></script>
 <script>
 (function () {
@@ -430,6 +441,23 @@ if (gBtn) {
     ok('hidden View more button not clicked', !fakeBtn.dataset.cppClicked);
     hiddenContainer.remove();
 
+    // 14b. Tab isolation: only a View more button Classroom++ has actually
+    // claimed is hidden. Google's own buttons on other tabs keep their layout.
+    const foreignBtn = document.createElement('button');
+    foreignBtn.className = 'Mvr5Ef';
+    foreignBtn.setAttribute('jsname', 't6Kl7b');
+    foreignBtn.setAttribute('aria-label', 'View more');
+    foreignBtn.textContent = 'View more';
+    document.body.appendChild(foreignBtn);
+    const foreignStyle = getComputedStyle(foreignBtn);
+    ok('unmanaged View more button keeps its layout',
+      foreignStyle.opacity !== '0' && foreignStyle.position !== 'absolute',
+      `opacity=${foreignStyle.opacity} position=${foreignStyle.position}`);
+    ok('To review UI never appears on the Classwork tab',
+      !document.documentElement.classList.contains('cpp-review-mode') &&
+        !document.querySelector('.cpp-review-box'));
+    foreignBtn.remove();
+
     // 15. Clicking "View fewer" collapses the topic but keeps the button the
     // user just clicked at the same place on screen (no jump to page bottom).
     btn7.click(); // expand "View all (8)"
@@ -447,6 +475,175 @@ if (gBtn) {
       !!btn7.querySelector('.cpp-toggle-text') &&
         btn7.querySelector('.cpp-toggle-text').textContent === 'View all (8)',
       `got "${btn7.querySelector('.cpp-toggle-text').textContent}"`);
+
+    // 16. The loading count reports real posts only: no invented total and no
+    // To-do sidebar items counted as Classwork posts.
+    const mainPosts = document.querySelectorAll('[role="main"] [role="listitem"]').length;
+    const allListItems = document.querySelectorAll('[role="listitem"]').length;
+    ok('loaded post count matches the posts in the Classwork lists',
+      api.countLoadedPosts() === mainPosts,
+      `count=${api.countLoadedPosts()} mainPosts=${mainPosts}`);
+    ok('loaded post count ignores the To-do sidebar',
+      allListItems > mainPosts && api.countLoadedPosts() === mainPosts,
+      `count=${api.countLoadedPosts()} allListItems=${allListItems}`);
+
+    // 17. The loading bar label never over-reports: no invented total, and the
+    // number it shows never exceeds the real post count.
+    const overlayTexts = window.__overlayTexts || [];
+    ok('progress label was shown during the bulk load', overlayTexts.length > 0,
+      `${overlayTexts.length} label update(s)`);
+    ok('progress label shows no post count',
+      !overlayTexts.some((t) => /\d/.test(t)),
+      overlayTexts.find((t) => /\d/.test(t)) || overlayTexts[0] || '');
+    ok('progress label says what is happening',
+      overlayTexts.every((t) => /Loading posts/i.test(t)),
+      overlayTexts[0] || '');
+    ok('loading bar stays indeterminate (no invented total)',
+      (window.__overlayBarSamples || []).every((s) => s.hasValue === false),
+      `${(window.__overlayBarSamples || []).filter((s) => s.hasValue).length} sample(s) with a value`);
+
+    // 18. Switching classes can reveal the new Classwork view through a style
+    // change only, which the MutationObserver never sees. The safety net must
+    // still load the posts behind "View more" without a page reload.
+    const lateTopic = document.createElement('section');
+    lateTopic.setAttribute('data-topic-id', '877248554123');
+    lateTopic.style.display = 'none';
+    const lateList = document.createElement('ol');
+    lateList.className = 'posts';
+    lateList.id = 'list-late';
+    lateList.setAttribute('role', 'list');
+    lateTopic.appendChild(lateList);
+    const lateBtn = document.createElement('button');
+    lateBtn.setAttribute('jsname', 't6Kl7b');
+    lateBtn.setAttribute('aria-label', 'View more posts');
+    lateBtn.textContent = 'View more';
+    lateBtn.addEventListener('click', () => {
+      for (let i = lateList.children.length; i < 10; i++) {
+        lateList.appendChild(buildPost('list-late', i, false, false));
+      }
+      lateBtn.remove();
+    }, { once: true });
+    lateTopic.appendChild(lateBtn);
+    for (let i = 0; i < 5; i++) lateList.appendChild(buildPost('list-late', i, false, false));
+    document.querySelector('[role="main"]').appendChild(lateTopic);
+    await wait(700);
+    ok('hidden late topic is left alone while it is hidden',
+      lateList.children.length === 5,
+      `${lateList.children.length} post(s)`);
+
+    // Reveal it the way Classroom does on a class switch: attribute only.
+    lateTopic.style.display = '';
+    const recovered = await waitFor(() => lateList.children.length === 10, 6000);
+    ok('posts load after a style-only class switch, without a reload', recovered,
+      `${lateList.children.length} post(s), clicked=${lateBtn.dataset.cppClicked === 'true'}`);
+
+    // 19. Classwork Layout is the master switch for all Classwork changes.
+    ok('classwork layout starts enabled', api.isClassworkLayoutEnabled() === true);
+    api.setClassworkLayoutEnabled(false);
+    await wait(100);
+    ok('disabling Classwork Layout removes every scroll window',
+      document.querySelectorAll('.cpp-scroll-window').length === 0,
+      `got ${document.querySelectorAll('.cpp-scroll-window').length}`);
+    ok('disabling Classwork Layout removes the Reverse order button',
+      !document.getElementById('cpp-sort-toggle'));
+    ok('disabling Classwork Layout removes the toggles', !document.querySelector('.cpp-toggle'));
+    api.setClassworkLayoutEnabled(true);
+    await waitFor(() => document.querySelectorAll('.cpp-scroll-window').length > 0);
+    ok('re-enabling Classwork Layout restores the scroll windows',
+      document.querySelectorAll('.cpp-scroll-window').length > 0,
+      `got ${document.querySelectorAll('.cpp-scroll-window').length}`);
+
+    // 20. Entering a class can reveal a whole Classwork view through style
+    // changes only (no DOM insert the observer sees). It must still be enhanced
+    // without reloading the page.
+    const revealTopic = document.createElement('section');
+    revealTopic.setAttribute('data-topic-id', '877248554321');
+    revealTopic.style.display = 'none';
+    const revealList = document.createElement('ol');
+    revealList.className = 'posts';
+    revealList.setAttribute('role', 'list');
+    for (let i = 0; i < 8; i++) revealList.appendChild(buildPost('list-reveal', i, false, false));
+    revealTopic.appendChild(revealList);
+    document.querySelector('[role="main"]').appendChild(revealTopic);
+    await wait(400);
+    ok('a hidden topic is not turned into a scroll window',
+      !revealList.classList.contains('cpp-scroll-window'));
+
+    revealTopic.style.display = '';
+    const revealed = await waitFor(() => revealList.classList.contains('cpp-scroll-window'), 6000);
+    ok('topic is windowed after a style-only reveal, without a reload', revealed);
+
+    // 21. The loaded-post count counts each post once. Classroom keeps the
+    // previous class' topic lists in the DOM while switching classes, and an
+    // overlapping group must not contribute the same posts twice either.
+    const mainEl = document.querySelector('[role="main"]');
+    const beforeSwitch = api.countLoadedPosts();
+    ok('count is stable across scans',
+      api.countLoadedPosts() === beforeSwitch,
+      `${beforeSwitch} -> ${api.countLoadedPosts()}`);
+
+    // A hidden copy of a class' lists must add nothing.
+    const staleTopic = document.createElement('section');
+    staleTopic.setAttribute('data-topic-id', '877248554999');
+    staleTopic.style.display = 'none';
+    const staleList = document.createElement('ol');
+    staleList.className = 'posts';
+    staleList.setAttribute('role', 'list');
+    for (let i = 0; i < 8; i++) staleList.appendChild(buildPost('list-stale', i, false, false));
+    staleTopic.appendChild(staleList);
+    mainEl.appendChild(staleTopic);
+    await wait(150);
+    ok('hidden posts from the previous class are not counted',
+      api.countLoadedPosts() === beforeSwitch,
+      `${beforeSwitch} -> ${api.countLoadedPosts()}`);
+    staleTopic.remove();
+    await wait(100);
+
+    // Hide the whole current class the way a switch does, and show a new one.
+    const previousChildren = Array.from(mainEl.children);
+    previousChildren.forEach((child) => { child.style.display = 'none'; });
+    const newTopic = document.createElement('section');
+    newTopic.setAttribute('data-topic-id', '877248554777');
+    const newList = document.createElement('ol');
+    newList.className = 'posts';
+    newList.setAttribute('role', 'list');
+    for (let i = 0; i < 10; i++) newList.appendChild(buildPost('list-new', i, false, false));
+    newTopic.appendChild(newList);
+    mainEl.appendChild(newTopic);
+    await wait(200);
+    ok('only the visible class is counted after a switch',
+      api.countLoadedPosts() === 10,
+      `got ${api.countLoadedPosts()} (want 10, previous class was ${beforeSwitch})`);
+    newTopic.remove();
+    previousChildren.forEach((child) => { child.style.display = ''; });
+    await wait(300);
+    ok('count returns to the real total after the switch back',
+      api.countLoadedPosts() === beforeSwitch,
+      `got ${api.countLoadedPosts()} want ${beforeSwitch}`);
+
+    // 22. Classroom keeps previously visited classes' regions in the DOM, in
+    // front of the one on screen. Only the visible region may be enhanced.
+    const parkedMain = document.createElement('div');
+    parkedMain.setAttribute('role', 'main');
+    parkedMain.style.display = 'none';
+    const parkedSection = document.createElement('section');
+    parkedSection.setAttribute('data-topic-id', '877248551111');
+    const parkedList = document.createElement('ol');
+    parkedList.className = 'posts';
+    parkedList.setAttribute('role', 'list');
+    for (let i = 0; i < 8; i++) parkedList.appendChild(buildPost('list-parked', i, false, false));
+    parkedSection.appendChild(parkedList);
+    parkedMain.appendChild(parkedSection);
+    document.body.insertBefore(parkedMain, document.body.firstChild);
+    api.scan();
+    await wait(200);
+    ok('a parked main from another class is not enhanced',
+      !parkedList.classList.contains('cpp-scroll-window'));
+    ok('the visible classwork region is still enhanced',
+      !!mainEl.querySelector('.cpp-scroll-window'));
+    parkedMain.remove();
+    api.scan();
+    await wait(100);
 
     const failed = lines.filter((l) => l.startsWith('FAIL')).length;
     lines.push(failed === 0 ? 'ALL TESTS PASSED' : `${failed} TEST(S) FAILED`);

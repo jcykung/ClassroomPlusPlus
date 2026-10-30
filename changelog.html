@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Changelog - Classroom++</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <style>
     :root {
       --primary: #16803c;
@@ -19,7 +18,7 @@
 
     body {
       font-family:
-        "Inter",
+        Roboto,
         -apple-system,
         BlinkMacSystemFont,
         "Segoe UI",
@@ -217,13 +216,77 @@
     <div class="subtitle">What's new and improved in Classroom++</div>
 
     <ul class="timeline">
+      <!-- v1.0.0 -->
+      <li class="timeline-item">
+        <div class="timeline-marker"></div>
+        <div class="timeline-header">
+          <h2 class="version-title">v1.0.0</h2>
+          <span class="version-date">October 2026</span>
+          <span class="badge badge-latest">Current</span>
+        </div>
+        <ul class="change-list">
+          <li class="change-item">
+            <span class="badge-tag tag-new">NEW</span><strong>First public release:</strong> everything Classroom++ does now lives in one polished extension — a compact, scrollable Classwork layout and faster marking on the To review page.
+          </li>
+          <li class="change-item">
+            <span class="badge-tag tag-new">NEW</span><strong>Bulk Select on To Review:</strong> A checkbox on every assignment, a Select all option and a floating bar that marks the whole batch as reviewed in one pass. Shift-click picks a continuous range, and the same menu item Google uses is clicked for each row.
+          </li>
+          <li class="change-item">
+            <span class="badge-tag tag-new">NEW</span><strong>Classwork Layout Switch:</strong> One toggle in the popup controls every Classwork change — 5-post scroll windows, loading all posts, centering the newest post, View all / View fewer and the Reverse order button. Turn it off and Classwork is untouched.
+          </li>
+          <li class="change-item">
+            <span class="badge-tag tag-improve">IMPROVE</span><strong>Works in Every Class:</strong> Classwork is enhanced in any class you open, including archived classes, and a class you have already visited keeps its layout so returning to it is instant and nothing is fetched twice.
+          </li>
+          <li class="change-item">
+            <span class="badge-tag tag-improve">IMPROVE</span><strong>Simpler Loading Indicator:</strong> The loading bar is now just a spinner and "Loading posts…" — the post counter was removed because Classroom never reveals how many posts are still hidden.
+          </li>
+          <li class="change-item">
+            <span class="badge-tag tag-improve">IMPROVE</span><strong>Settings Apply Immediately:</strong> Changing a switch in the popup refreshes your open Classroom tabs so the new layout is live right away.
+          </li>
+          <li class="change-item">
+            <span class="badge-tag tag-fix">FIX</span><strong>Only Two Tabs Are Touched:</strong> Home, Stream, Calendar, People and the To-do page keep Google's original layout and scrolling. Everything Classroom++ draws is scoped to Classwork and To review, and Google's own "View more" buttons are never restyled.
+          </li>
+          <li class="change-item">
+            <span class="badge-tag tag-improve">IMPROVE</span><strong>Lighter and More Private:</strong> The extension requests only storage plus classroom.google.com, bundles all of its code and fonts (no remote resources), and collects no data at all.
+          </li>
+        </ul>
+      </li>
+
+      <!-- v0.2.2 -->
+      <li class="timeline-item">
+        <div class="timeline-marker"></div>
+        <div class="timeline-header">
+          <h2 class="version-title">v0.2.2</h2>
+          <span class="version-date">October 2026</span>
+        </div>
+        <ul class="change-list">
+          <li class="change-item">
+            <span class="badge-tag tag-new">NEW</span><strong>Bulk Select:</strong> The "To review" page now gets a checkbox on every assignment you can mark reviewed, plus a floating action bar with "Select all" — mark a whole batch as reviewed in one pass instead of one by one.
+          </li>
+          <li class="change-item">
+            <span class="badge-tag tag-new">NEW</span><strong>Shift-Click Ranges:</strong> Click one checkbox, then shift-click another to select everything in between, across due-date groups. Shift-clicking a checked row clears the whole range.
+          </li>
+          <li class="change-item">
+            <span class="badge-tag tag-new">NEW</span><strong>Bulk Select Toggle:</strong> The extension popup has a switch for the multi-select checkboxes, so you can turn the "To review" additions off entirely if you prefer the plain page.
+          </li>
+          <li class="change-item">
+            <span class="badge-tag tag-improve">IMPROVE</span><strong>Classwork Layout Switch:</strong> The old "Smart Centering" switch is now "Classwork Layout" and controls every Classwork change in one place — scrollable 5-post topics, loading all posts, centering the newest post, View all / View fewer, and the Reverse order button. Turn it off and Classwork is left exactly as Google built it.
+          </li>
+          <li class="change-item">
+            <span class="badge-tag tag-fix">FIX</span><strong>Always Activates on Enter:</strong> Entering a class sometimes did nothing until you reloaded, because Classroom can reveal a Classwork view by changing styles rather than by adding elements. A light background check now notices that and rescans — so topics are windowed and every post is loaded on entry, class switches included.
+          </li>
+          <li class="change-item">
+            <span class="badge-tag tag-fix">FIX</span><strong>Home and Other Tabs Stay Untouched:</strong> The extension now only acts on the Classwork tab and the "To review" page. It no longer wraps a class Stream's post list in a fixed-height scroll area (which cropped the layout and blocked page scrolling) and no longer restyles Google's own "View more" buttons, so Home, Stream, People, Calendar and the To-do page keep their normal layout and scrolling.
+          </li>
+        </ul>
+      </li>
+
       <!-- v0.2.1 -->
       <li class="timeline-item">
         <div class="timeline-marker"></div>
         <div class="timeline-header">
           <h2 class="version-title">v0.2.1</h2>
           <span class="version-date">October 2026</span>
-          <span class="badge badge-latest">Current</span>
         </div>
         <ul class="change-list">
           <li class="change-item">

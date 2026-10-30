@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Stream</title>
+<link rel="stylesheet" href="../src/content.css">
+<style>
+  body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+  main { max-width: 720px; margin: 0 auto; padding: 16px; }
+  .tabs { display: flex; gap: 8px; padding: 8px 16px; border-bottom: 1px solid #dadce0; }
+  .tabs [role="tab"] { padding: 8px 12px; border: 0; background: none; cursor: pointer; font: inherit; }
+  .tabs [role="tab"][aria-selected="true"] { color: #0b57d0; border-bottom: 2px solid #0b57d0; }
+  .stream { display: flex; flex-direction: column; row-gap: 8px; margin: 0; padding: 0; list-style: none; }
+  .stream-item { height: 180px; background: #f1f3f4; border-radius: 8px; padding: 12px; box-sizing: border-box; }
+  #results { white-space: pre-wrap; font-family: monospace; padding: 16px; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="tabs" role="tablist">
+  <button role="tab" aria-selected="true">Stream</button>
+  <button role="tab" aria-selected="false">Classwork</button>
+  <button role="tab" aria-selected="false">People</button>
+</div>
+<main role="main">
+  <h1>Class Stream</h1>
+  <ol class="stream" id="stream-list" role="list"></ol>
+  <button id="google-view-more" type="button" aria-label="View more posts" jsname="t6Kl7b">
+    <span>View more</span>
+  </button>
+  <div style="height: 1200px"></div>
+</main>
+<div id="results">pending</div>
+<script>
+  const list = document.getElementById('stream-list');
+  for (let i = 1; i <= 8; i++) {
+    const li = document.createElement('li');
+    li.className = 'stream-item';
+    li.setAttribute('data-stream-item-id', String(9000 + i));
+    li.setAttribute('role', 'listitem');
+    const a = document.createElement('a');
+    a.href = 'https://classroom.google.com/c/123/p/900' + i;
+    a.textContent = 'Stream post ' + i;
+    li.appendChild(a);
+    list.appendChild(li);
+  }
+</script>
+<script src="../src/content.js"></script>
+<script>
+(function () {
+  const lines = [];
+  const ok = (name, cond, detail) => lines.push(`${cond ? 'PASS' : 'FAIL'} ${name}${detail ? ' — ' + detail : ''}`);
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const waitFor = async (cond, timeout = 6000) => {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      if (cond()) return true;
+      await wait(50);
+    }
+    return cond();
+  };
+
+  async function run() {
+    const api = window.__classroomPlusPlus;
+    ok('test hook exposed', !!api);
+
+    await wait(600);
+
+    // 1. The Stream is not recognised as Classwork.
+    ok('stream view is not treated as Classwork', api.isClassworkView() === false);
+
+    // 2. Nothing from Classroom++ is injected or applied here.
+    ok('no scroll window on the stream', !document.querySelector('.cpp-scroll-window'),
+      `found ${document.querySelectorAll('.cpp-scroll-window').length}`);
+    ok('no View all toggle on the stream', !document.querySelector('.cpp-toggle'));
+    ok('no Reverse order button on the stream', !document.getElementById('cpp-sort-toggle'));
+    ok('no loading overlay on the stream', !document.querySelector('.cpp-loading-overlay'));
+    ok('no To review checkboxes on the stream',
+      !document.documentElement.classList.contains('cpp-review-mode') &&
+        !document.querySelector('.cpp-review-box') && !document.querySelector('.cpp-review-bar'));
+
+    // 3. The stream list keeps its own layout and scrolling.
+    const streamList = document.getElementById('stream-list');
+    const listStyle = getComputedStyle(streamList);
+    ok('stream list keeps its natural height', streamList.style.maxHeight === '' && streamList.style.height === '',
+      `max-height="${streamList.style.maxHeight}" height="${streamList.style.height}"`);
+    ok('stream list keeps its own overflow', listStyle.overflowY === 'visible' && listStyle.overflowX === 'visible',
+      `overflow-y=${listStyle.overflowY} overflow-x=${listStyle.overflowX}`);
+    ok('no window height variable is set on the stream list',
+      !streamList.style.getPropertyValue('--cpp-window-height'));
+
+    // 4. Google's own "View more" button is untouched.
+    const googleBtn = document.getElementById('google-view-more');
+    const btnStyle = getComputedStyle(googleBtn);
+    ok("Google's View more button keeps its layout",
+      btnStyle.opacity !== '0' && btnStyle.position !== 'absolute',
+      `opacity=${btnStyle.opacity} position=${btnStyle.position}`);
+
+    // 5. The page is still scrollable.
+    ok('page still has its full scrollable height',
+      document.documentElement.scrollHeight > window.innerHeight,
+      `scrollHeight=${document.documentElement.scrollHeight} viewport=${window.innerHeight}`);
+
+    // 6. A class switch replaces a whole main region. The class view we leave
+    // keeps its layout (so coming back is instant), while the Stream stays
+    // untouched and no Classroom++ control is visible on it.
+    const streamMain = document.querySelector('main');
+    const classMain = document.createElement('div');
+    classMain.setAttribute('role', 'main');
+    const classTopic = document.createElement('section');
+    classTopic.setAttribute('data-topic-id', '555000111');
+    const classList = document.createElement('ol');
+    classList.className = 'posts';
+    classList.setAttribute('role', 'list');
+    for (let i = 0; i < 8; i++) {
+      const li = document.createElement('li');
+      li.className = 'stream-item';
+      li.setAttribute('data-stream-item-id', String(7000 + i));
+      li.innerHTML = '<a href="https://classroom.google.com/c/123/p/700' + i + '">Post ' + i + '</a>';
+      classList.appendChild(li);
+    }
+    classTopic.appendChild(classList);
+    const toolbar = document.createElement('div');
+    toolbar.innerHTML =
+      '<button id="class-collapse-all" type="button" aria-label="Collapse all topics">Collapse all</button>';
+    classMain.appendChild(toolbar);
+    classMain.appendChild(classTopic);
+    document.body.insertBefore(classMain, streamMain);
+    streamMain.style.display = 'none';
+
+    const enhanced = await waitFor(() => classList.classList.contains('cpp-scroll-window'));
+    ok('the class view on screen is enhanced', enhanced);
+    ok('the Reverse order button appears with the class view',
+      !!document.getElementById('cpp-sort-toggle'));
+
+    // Leave the class: the class main goes away, the Stream comes back.
+    classMain.style.display = 'none';
+    streamMain.style.display = '';
+    api.scan();
+    await wait(200);
+
+    ok('the parked class view keeps its scroll window for next time',
+      classList.classList.contains('cpp-scroll-window'));
+    ok('the stream list is untouched', !streamList.classList.contains('cpp-scroll-window'));
+    ok('leaving Classwork removes its toolbar button', !document.getElementById('cpp-sort-toggle'));
+    ok('leaving Classwork shows no Classroom++ controls',
+      Array.from(document.querySelectorAll('.cpp-toggle, .cpp-loading-overlay'))
+        .every((el) => !el.getClientRects().length));
+
+    classMain.remove();
+    api.scan();
+    await wait(100);
+
+    const failed = lines.filter((l) => l.startsWith('FAIL')).length;
+    lines.push(failed === 0 ? 'ALL TESTS PASSED' : `${failed} TEST(S) FAILED`);
+    document.getElementById('results').textContent = lines.join('\n');
+  }
+
+  if (document.readyState === 'complete') setTimeout(run, 400);
+  else window.addEventListener('load', () => setTimeout(run, 400));
+})();
+</script>
+</body>
+</html>

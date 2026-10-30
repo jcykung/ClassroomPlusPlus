@@ -1,0 +1,8 @@
+# Private reference snapshot of a live Classwork "To review" page (student data)
+tests/to-review-snapshot.html
+
+# Web Store build output
+dist/
+
+# Local reference captures of live Classroom pages (contain real names)
+classroom-feed.html

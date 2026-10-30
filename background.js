@@ -11,7 +11,8 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     chrome.storage.sync.set({
       isReversed: false,
       visiblePosts: 5,
-      smartCentering: true,
+      classworkLayout: true,
+      bulkReview: true,
       firstRun: true
     });
     chrome.tabs.create({ url: 'onboarding.html' });
