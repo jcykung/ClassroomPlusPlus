@@ -103,41 +103,39 @@
   flex-direction: column !important;
 }
 
-/* Sort toggle button at top next to "Collapse all" */
+/* Sort toggle button, placed to the left of "Collapse all". Its look is
+ * mirrored from that button at runtime; these rules are the fallback used
+ * before/without a Collapse all button to copy from. */
 .cpp-sort-toggle {
   appearance: none;
   background: #ffffff;
   border: 1px solid #dadce0;
-  border-radius: 999px;
-  color: #3c4043;
+  border-radius: 4px;
+  color: #0b57d0;
   cursor: pointer;
   font-family: "Google Sans", Roboto, Arial, sans-serif;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
-  line-height: 1.4;
-  padding: 6px 14px;
+  line-height: 1.45;
+  padding: 6px 12px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  margin-left: 0;
   margin-right: 8px;
-  box-shadow: 0 1px 2px rgba(60, 64, 67, 0.08);
-  transition: background-color 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
+  transition: filter 0.15s ease, color 0.15s ease;
   user-select: none;
   vertical-align: middle;
+  white-space: nowrap;
 }
 
 .cpp-sort-toggle:hover {
-  background: #f8f9fa;
-  border-color: #0b57d0;
-  color: #0b57d0;
-  box-shadow: 0 1px 3px rgba(11, 87, 208, 0.15);
+  filter: brightness(0.96);
 }
 
-.cpp-sort-toggle.cpp-sort-active {
-  background: #e8f0fe;
-  border-color: #0b57d0;
-  color: #0b57d0;
-  font-weight: 600;
+.cpp-sort-toggle:focus-visible {
+  outline: 2px solid #0b57d0;
+  outline-offset: 2px;
 }
 
 .cpp-sort-icon {
@@ -146,6 +144,139 @@
   fill: currentColor;
   flex: none;
 }
+
+/* ── Loading overlay ────────────────────────────────────────────────────── */
+
+.cpp-loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99998;
+  /* Frosted-glass backdrop — dims page flash without totally obscuring it */
+  background: rgba(248, 249, 250, 0.82);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  /* Fade in quickly, fade out gently */
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  pointer-events: none; /* don't block page interaction */
+}
+
+.cpp-loading-overlay.cpp-loading-visible {
+  opacity: 1;
+  pointer-events: none;
+}
+
+.cpp-loading-overlay.cpp-loading-done {
+  opacity: 0;
+  transition: opacity 0.4s ease 0.1s;
+}
+
+/* Label + icon row */
+.cpp-loading-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: "Google Sans", "Google Sans Text", Roboto, Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: #3c4043;
+  letter-spacing: 0.01em;
+}
+
+.cpp-loading-icon {
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid #e8eaed;
+  border-top-color: #1a73e8;
+  border-radius: 50%;
+  animation: cpp-spin 0.75s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes cpp-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Progress track */
+.cpp-loading-track {
+  width: min(340px, 72vw);
+  height: 5px;
+  background: #e8eaed;
+  border-radius: 1e5px;
+  overflow: clip;
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.06);
+}
+
+/* Progress fill — native <progress> fully custom-styled */
+.cpp-loading-bar {
+  appearance: none;
+  border: 0 solid;
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border-radius: 1e5px;
+  overflow: clip;
+}
+
+/* Let native bar show through (Webkit) */
+.cpp-loading-bar::-webkit-progress-bar {
+  background: transparent;
+}
+
+/* Webkit / Blink fill */
+.cpp-loading-bar::-webkit-progress-value {
+  background: linear-gradient(90deg, #1a73e8 0%, #34a853 100%);
+  border-radius: 1e5px;
+  transition: inline-size 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Firefox fill */
+.cpp-loading-bar::-moz-progress-bar {
+  background: linear-gradient(90deg, #1a73e8 0%, #34a853 100%);
+  border-radius: 1e5px;
+  transition: inline-size 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Indeterminate shimmer — shown while value is unknown */
+.cpp-loading-bar:indeterminate::-webkit-progress-bar {
+  background: linear-gradient(90deg, transparent 0%, #1a73e8 40%, #4285f4 60%, transparent 100%);
+  background-size: 200% 100%;
+  animation: cpp-shimmer 1.4s ease-in-out infinite;
+}
+
+.cpp-loading-bar:indeterminate::-moz-progress-bar {
+  background: linear-gradient(90deg, #1a73e8 0%, #4285f4 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: cpp-shimmer 1.4s ease-in-out infinite;
+  inline-size: 40%;
+  translate: -100%;
+  animation: cpp-moz-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes cpp-shimmer {
+  0%   { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+@keyframes cpp-moz-slide {
+  0%   { translate: -100%; }
+  50%  { translate: 0%; }
+  100% { translate: 150%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cpp-loading-icon { animation: none; border-top-color: #1a73e8; }
+  .cpp-loading-bar::-webkit-progress-value,
+  .cpp-loading-bar::-moz-progress-bar { transition: none; }
+}
+
+/* ── End loading overlay ───────────────────────────────────────────────── */
 
 /* Classroom++ — Visually hide Google Classroom's native "View more" button
  * We keep it rendered at 0 opacity with 1px clipped off-screen so Google's

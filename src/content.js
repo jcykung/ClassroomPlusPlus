@@ -2,13 +2,18 @@
  * Classroom++ — content script.
  *
  * On Google Classroom's Classwork page:
- * 1. Limits visible posts in each Topic section to 5 posts by default.
+ * 1. Loads every post of every Topic up front (clicking Google's "View more"
+ *    until the topic is complete), then limits the visible posts to 5.
  *    (User can click "View all" to expand to show all posts in the Topic).
- * 2. Each Topic section is scrollable through all posts.
+ * 2. Each Topic section is scrollable through all posts. Expanding a post
+ *    grows the scroll window by the same amount, so the whole post stays
+ *    visible while it is being edited.
  * 3. By default (on entering/returning to Classwork), scrolls so that
  *    the latest published post (not drafts) is aligned to the middle
  *    of the scroll (the 3rd post of the 5 showing), allowing the user to
  *    see what came before and what needs to be edited and posted next.
+ * 4. Returning to the Classwork tab reuses the posts that are already on the
+ *    page: the loading bar only appears when there is actually work to do.
  */
 (() => {
   'use strict';
@@ -86,14 +91,7 @@
             try {
               localStorage.setItem(SORT_STORAGE_KEY, String(isReversed));
             } catch (_) {}
-            const btn = document.getElementById('cpp-sort-toggle');
-            if (btn) {
-              btn.classList.toggle('cpp-sort-active', isReversed);
-              const textSpan = btn.querySelector('.cpp-sort-text');
-              if (textSpan) {
-                textSpan.textContent = isReversed ? 'Reverse order: ON' : 'Reverse order';
-              }
-            }
+            refreshSortButton();
             applySortOrderToAll();
           }
         }
@@ -110,14 +108,7 @@
           try {
             localStorage.setItem(SORT_STORAGE_KEY, String(isReversed));
           } catch (_) {}
-          const btn = document.getElementById('cpp-sort-toggle');
-          if (btn) {
-            btn.classList.toggle('cpp-sort-active', isReversed);
-            const textSpan = btn.querySelector('.cpp-sort-text');
-            if (textSpan) {
-              textSpan.textContent = isReversed ? 'Reverse order: ON' : 'Reverse order';
-            }
-          }
+          refreshSortButton();
           applySortOrderToAll();
         }
       }
@@ -132,6 +123,183 @@
   let isExpanding = false;
   /** Track whether we've injected our CSS to hide Google's View more. */
   let viewMoreCssInjected = false;
+
+  // ── Loading overlay ──────────────────────────────────────────────────────
+
+  let overlayEl = null;
+  let overlayBar = null;
+  let overlayLabel = null;
+  let overlayHideTimer = null;
+
+  /** How long to wait after the last setup activity before hiding the overlay. */
+  const SETUP_QUIET_MS = 300;
+  /** Hard cap per loading burst: the global overlay always hides after this long
+   * unless batches are still arriving (see SETUP_ABSOLUTE_MAX_MS). */
+  const SETUP_MAX_MS = 2500;
+  /** Absolute cap for a single bulk load, however many batches it needs. */
+  const SETUP_ABSOLUTE_MAX_MS = 60000;
+  /** View more clicks can take a while on school networks; don't hang forever. */
+  const EXPANSION_WAIT_TIMEOUT = 3500;
+
+  let setupActive = false;
+  let setupStartedAt = 0;
+  let setupFinishTimer = 0;
+  let setupHardTimer = 0;
+  let pendingLayoutSettles = 0;
+
+  function ensureOverlay() {
+    if (overlayEl && overlayEl.isConnected) {
+      // Re-use an overlay that is still fading out instead of creating a new one.
+      clearTimeout(overlayHideTimer);
+      overlayHideTimer = null;
+      overlayEl.classList.remove('cpp-loading-done');
+      overlayEl.classList.add('cpp-loading-visible');
+      return;
+    }
+
+    overlayEl = document.createElement('div');
+    overlayEl.className = 'cpp-loading-overlay';
+    overlayEl.setAttribute('role', 'status');
+    overlayEl.setAttribute('aria-live', 'polite');
+    overlayEl.setAttribute('aria-label', 'Loading posts…');
+
+    overlayLabel = document.createElement('div');
+    overlayLabel.className = 'cpp-loading-label';
+    overlayLabel.innerHTML = '<span class="cpp-loading-icon"></span><span class="cpp-loading-text">Loading posts…</span>';
+
+    const track = document.createElement('div');
+    track.className = 'cpp-loading-track';
+
+    overlayBar = document.createElement('progress');
+    overlayBar.className = 'cpp-loading-bar';
+    overlayBar.setAttribute('aria-hidden', 'true');
+    // Start indeterminate (no value attr) until we know total
+    track.appendChild(overlayBar);
+
+    overlayEl.appendChild(overlayLabel);
+    overlayEl.appendChild(track);
+    document.body.appendChild(overlayEl);
+
+    // Trigger fade-in on next frame. The timeout is a fallback for cases where
+    // requestAnimationFrame is throttled (background tab / headless render).
+    const showOverlay = () => {
+      if (overlayEl) overlayEl.classList.add('cpp-loading-visible');
+    };
+    requestAnimationFrame(() => requestAnimationFrame(showOverlay));
+    setTimeout(showOverlay, 50);
+  }
+
+  /**
+   * Start the global loading session. Only called when a topic actually has
+   * posts left to fetch, so tabs/visits with everything already loaded show
+   * no bar at all. The overlay always hides after SETUP_QUIET_MS of calm or
+   * SETUP_MAX_MS per burst, whichever is first.
+   */
+  function beginSetup() {
+    if (!setupActive) {
+      setupActive = true;
+      setupStartedAt = Date.now();
+      ensureOverlay();
+      // Absolute guarantee: the bar can never get stuck.
+      clearTimeout(setupHardTimer);
+      setupHardTimer = window.setTimeout(forceFinishSetup, SETUP_MAX_MS);
+    }
+    noteSetupActivity();
+  }
+
+  /** Push the overlay's dismissal back while initial setup work is happening. */
+  function noteSetupActivity(extraMs = 0) {
+    if (!setupActive) return;
+    clearTimeout(setupFinishTimer);
+    setupFinishTimer = window.setTimeout(finishSetupIfIdle, SETUP_QUIET_MS + extraMs);
+  }
+
+  function finishSetupIfIdle() {
+    if (!setupActive) return;
+
+    const timedOut = Date.now() - setupStartedAt > SETUP_MAX_MS;
+
+    // Give the scan + scroll alignment a moment to settle.
+    if (!timedOut && (isExpanding || scanTimer || pendingLayoutSettles > 0)) {
+      noteSetupActivity();
+      return;
+    }
+
+    forceFinishSetup();
+  }
+
+  function forceFinishSetup() {
+    if (!setupActive) return;
+    // Bulk-loading a big topic can take longer than the hard cap; keep the bar
+    // alive while batches are still arriving (with an absolute overall limit).
+    if (isExpanding && Date.now() - setupStartedAt < SETUP_ABSOLUTE_MAX_MS) {
+      clearTimeout(setupHardTimer);
+      setupHardTimer = window.setTimeout(forceFinishSetup, SETUP_MAX_MS);
+      noteSetupActivity();
+      return;
+    }
+    setupActive = false;
+    clearTimeout(setupFinishTimer);
+    setupFinishTimer = 0;
+    clearTimeout(setupHardTimer);
+    setupHardTimer = 0;
+    hideOverlay();
+  }
+
+  function cancelSetup() {
+    setupActive = false;
+    pendingLayoutSettles = 0;
+    clearTimeout(setupFinishTimer);
+    setupFinishTimer = 0;
+    clearTimeout(setupHardTimer);
+    setupHardTimer = 0;
+    if (overlayEl) hideOverlay();
+  }
+
+  /**
+   * Track scroll-alignment retries so the overlay can't disappear while the
+   * last layout adjustment is still pending.
+   */
+  function trackLayoutSettle() {
+    if (!setupActive) return null;
+    pendingLayoutSettles++;
+    noteSetupActivity();
+
+    let done = false;
+    return () => {
+      if (done) return;
+      done = true;
+      pendingLayoutSettles = Math.max(0, pendingLayoutSettles - 1);
+      noteSetupActivity();
+    };
+  }
+
+  function updateOverlay(loaded, total) {
+    if (!overlayEl) return;
+    const text = overlayEl.querySelector('.cpp-loading-text');
+    if (total > 0) {
+      overlayBar.max = total;
+      overlayBar.value = loaded;
+      if (text) text.textContent = `Loading posts… ${loaded} / ${total}`;
+    } else {
+      // Remove value attr to keep indeterminate
+      overlayBar.removeAttribute('value');
+      if (text) text.textContent = 'Loading posts…';
+    }
+  }
+
+  function hideOverlay() {
+    if (!overlayEl) return;
+    clearTimeout(overlayHideTimer);
+    overlayEl.classList.add('cpp-loading-done');
+    overlayEl.classList.remove('cpp-loading-visible');
+    // Remove from DOM after fade-out transition (0.4s + 0.1s delay + buffer)
+    overlayHideTimer = setTimeout(() => {
+      if (overlayEl) { overlayEl.remove(); overlayEl = null; overlayBar = null; overlayLabel = null; }
+    }, 650);
+  }
+
+  // ── End loading overlay ──────────────────────────────────────────────────
 
   /** @type {Set<Element>} - Post-list containers currently enhanced. */
   const activeContainers = new Set();
@@ -244,6 +412,8 @@
   function alignLatestPostToMiddle(container, items, targetIndex, reversed = false) {
     if (!items || items.length === 0) return;
 
+    markProgrammaticScroll(container, 800);
+
     // If no published posts (all drafts, targetIndex < 0), scroll to the very top
     if (targetIndex < 0) {
       container.scrollTop = 0;
@@ -279,13 +449,19 @@
       }
     };
 
+    const settle = trackLayoutSettle();
+
     applyScroll();
     requestAnimationFrame(() => {
       applyScroll();
       setTimeout(applyScroll, 80);
       setTimeout(applyScroll, 200);
-      setTimeout(applyScroll, 500);
     });
+    // Keep the overlay up until the final late-layout adjustment has run.
+    setTimeout(() => {
+      applyScroll();
+      if (settle) settle();
+    }, 500);
   }
 
   /**
@@ -469,11 +645,17 @@
   }
 
   function shouldHandle(container, items) {
-    if (items.length < CONFIG.minPostsToWindow) return false;
     if (container === document.body || container === document.documentElement) return false;
     if (!container.isConnected) return false;
     if (container.closest(SKIP_ANCESTOR_SELECTOR)) return false;
-    return true;
+    if (items.length >= CONFIG.minPostsToWindow) return true;
+    // Truncated topics (Google still holds unloaded posts behind "View more")
+    // are enhanced even while small, so scrolling them loads the next batch
+    // lazily instead of waiting for a manual "View more" click.
+    try {
+      if (findViewMoreForContainer(container)) return true;
+    } catch (_) {}
+    return false;
   }
 
   function gapBetween(items) {
@@ -535,7 +717,12 @@
       button.addEventListener('click', () => {
         const state = stateByContainer.get(container);
         if (!state) return;
-        setExpanded(container, state, !state.expanded);
+        const wasExpanded = state.expanded;
+        // Where the button sits on screen right now. Collapsing shrinks the
+        // scroll window, which drags the button (and the page below it) up.
+        const anchorY = button.getBoundingClientRect().top;
+        setExpanded(container, state, !wasExpanded);
+        if (wasExpanded) lockPageToToggle(container, anchorY);
       });
 
       const textSpan = document.createElement('span');
@@ -556,14 +743,49 @@
       anchor.insertAdjacentElement('afterend', ui);
     }
 
-    // Toggle label: "View all" to expand, "View fewer" to collapse
+    // Toggle label: "View all" to expand, "View fewer" to collapse.
     const textLabel = st.expanded ? 'View fewer' : `View all (${st.itemCount})`;
     const textSpan = st.button.querySelector(`.${CLASS.toggleText}`);
     if (textSpan && textSpan.textContent !== textLabel) {
       textSpan.textContent = textLabel;
     }
     st.button.setAttribute('aria-expanded', String(st.expanded));
-    st.button.setAttribute('aria-label', st.expanded ? 'View fewer posts' : `View all ${st.itemCount} posts`);
+    st.button.setAttribute(
+      'aria-label',
+      st.expanded ? 'View fewer posts' : `View all ${st.itemCount} posts`
+    );
+  }
+
+  /**
+   * Collapsing a topic shrinks its scroll window by thousands of pixels, which
+   * yanks the toggle button and everything under it up the page, leaving the
+   * user somewhere near the bottom. Re-anchor the window scroll so the button
+   * the user just clicked stays exactly where it was on screen.
+   */
+  function lockPageToToggle(container, anchorY) {
+    const st = stateByContainer.get(container);
+    const button = st && st.button;
+    if (!button) return;
+
+    // Our own last scroll position. If the page moved by anything else (the
+    // user scrolled), stop fighting them.
+    let expectedY = null;
+    const adjust = () => {
+      if (!button.isConnected) return;
+      if (expectedY !== null && Math.abs(window.scrollY - expectedY) > 2) return;
+      const delta = button.getBoundingClientRect().top - anchorY;
+      if (Math.abs(delta) >= 1) {
+        window.scrollTo({ top: window.scrollY + delta, behavior: 'instant' });
+      }
+      expectedY = window.scrollY;
+    };
+
+    // The height change lands synchronously, but Classroom's own layout can
+    // settle a frame or two later, so re-anchor a few times.
+    adjust();
+    requestAnimationFrame(adjust);
+    setTimeout(adjust, 80);
+    setTimeout(adjust, 240);
   }
 
   function setExpanded(container, st, expanded) {
@@ -575,6 +797,7 @@
       if (st.items && st.items.length) applyWindow(container, st.items);
     } else {
       container.classList.add(CLASS.expanded);
+      markProgrammaticScroll(container, 250);
       container.scrollTop = 0;
       ensureControls(container, st);
     }
@@ -583,8 +806,15 @@
   function teardown(container) {
     container.classList.remove(CLASS.window, CLASS.expanded);
     for (const prop of Object.values(VARS)) container.style.removeProperty(prop);
+    const topicNode = topicNodeForContainer(container);
+    if (topicNode) {
+      for (const btn of topicNode.querySelectorAll('.cpp-native-view-more')) {
+        btn.classList.remove('cpp-native-view-more');
+      }
+    }
     const st = stateByContainer.get(container);
     if (st && st.ui) st.ui.remove();
+    if (st && st.heightObserver) st.heightObserver.disconnect();
     stateByContainer.delete(container);
     activeContainers.delete(container);
   }
@@ -600,6 +830,16 @@
         ui: null,
         button: null,
         itemCount: 0,
+        /** Height currently applied to the scroll window. */
+        windowHeight: 0,
+        /** Height the 5-post window naturally needs (post expansion grows past it). */
+        baseWindowHeight: 0,
+        /** Natural height of each post at the time the window was measured. */
+        baseItemHeights: null,
+        /** Items currently watched for size changes by the height observer. */
+        observedItems: null,
+        heightObserver: null,
+        heightSyncScheduled: false,
       };
       stateByContainer.set(container, st);
     }
@@ -631,9 +871,24 @@
       return;
     }
 
+    if (countChanged || !st.windowHeight) {
+      st.baseWindowHeight = metrics.windowHeight;
+      st.baseItemHeights = measureItemHeights(items);
+      st.windowHeight = metrics.windowHeight;
+    }
+
     container.classList.add(CLASS.window);
     container.classList.toggle(CLASS.expanded, st.expanded);
-    container.style.setProperty(VARS.height, `${metrics.windowHeight}px`);
+    container.style.setProperty(VARS.height, `${Math.round(st.windowHeight)}px`);
+
+    // If the user expands a post inline (e.g. to edit it), grow the window by
+    // the same amount so the whole post stays visible.
+    observeWindowHeights(container, st, items);
+    watchInlineExpansion(container);
+    syncWindowHeight(container);
+
+    // Hide this topic's native View more; the bulk loader handles it.
+    hideViewMoreForContainer(container);
 
     const latestIndex = findLatestPostIndex(items);
 
@@ -650,9 +905,98 @@
     if (!st.centered || countChanged) {
       alignLatestPostToMiddle(container, items, latestIndex, isReversed);
       st.centered = true;
-    } else {
+    } else if (container.scrollTop !== previousScroll) {
+      // Only restore when the position actually drifted (e.g. posts
+      // re-rendered).
+      markProgrammaticScroll(container, 150);
       container.scrollTop = previousScroll;
     }
+  }
+
+  // --- Scroll window height follows inline post expansion ---
+
+  function measureItemHeights(items) {
+    const heights = new Map();
+    for (const item of items) heights.set(item, item.getBoundingClientRect().height);
+    return heights;
+  }
+
+  /**
+   * Watch every post in the topic so an inline expansion can be noticed even
+   * when it happens without a click we see (e.g. restored edit state).
+   */
+  function observeWindowHeights(container, st, items) {
+    if (typeof ResizeObserver === 'undefined') return;
+
+    if (!st.heightObserver) {
+      st.heightObserver = new ResizeObserver(() => scheduleWindowHeightSync(container));
+    }
+    const ro = st.heightObserver;
+    if (st.observedItems) {
+      for (const el of st.observedItems) ro.unobserve(el);
+    }
+    for (const el of items) ro.observe(el);
+    st.observedItems = items;
+  }
+
+  /**
+   * A post expands when the user clicks it (or presses Enter). ResizeObserver
+   * covers the layout change, but it is not delivered in every rendering
+   * environment, so re-measure shortly after any interaction as well.
+   */
+  function watchInlineExpansion(container) {
+    if (container._cppHeightWatch) return;
+    container._cppHeightWatch = true;
+
+    const remeasure = () => syncWindowHeight(container);
+    const kick = () => {
+      remeasure();
+      setTimeout(remeasure, 80);
+      setTimeout(remeasure, 250);
+      setTimeout(remeasure, 600);
+    };
+
+    container.addEventListener('click', kick, true);
+    container.addEventListener(
+      'keydown',
+      (e) => {
+        if (e.key === 'Enter' || e.key === ' ') kick();
+      },
+      true
+    );
+  }
+
+  function scheduleWindowHeightSync(container) {
+    const st = stateByContainer.get(container);
+    if (!st || st.heightSyncScheduled) return;
+    st.heightSyncScheduled = true;
+    const run = () => syncWindowHeight(container);
+    requestAnimationFrame(run);
+    setTimeout(run, 60);
+  }
+
+  function syncWindowHeight(container) {
+    const st = stateByContainer.get(container);
+    if (!st) return;
+    st.heightSyncScheduled = false;
+    if (st.expanded || !st.items || !st.windowHeight || !st.baseItemHeights || !st.baseWindowHeight) {
+      return;
+    }
+
+    // Grow by however much the posts currently exceed their natural height,
+    // so an expanded post is fully visible and a collapsed one gives the
+    // space back.
+    let growth = 0;
+    for (const [item, height] of measureItemHeights(st.items)) {
+      const base = st.baseItemHeights.get(item);
+      if (typeof base === 'number' && height > base + 0.5) growth += height - base;
+    }
+
+    const target = st.baseWindowHeight + growth;
+    if (Math.abs(target - st.windowHeight) < 0.5) return;
+
+    st.windowHeight = target;
+    container.style.setProperty(VARS.height, `${Math.round(target)}px`);
   }
 
   // --- Drag & Drop Enhancements ---
@@ -878,6 +1222,63 @@
     return null;
   }
 
+  /** Style properties mirrored from Google's "Collapse all" button. */
+  const MIRRORED_STYLE_PROPS = [
+    'alignItems', 'backgroundImage', 'backgroundColor', 'borderBottomColor',
+    'borderBottomLeftRadius', 'borderBottomRightRadius', 'borderBottomStyle',
+    'borderBottomWidth', 'borderLeftColor', 'borderLeftStyle', 'borderLeftWidth',
+    'borderRightColor', 'borderRightStyle', 'borderRightWidth', 'borderTopColor',
+    'borderTopLeftRadius', 'borderTopRightRadius', 'borderTopStyle', 'borderTopWidth',
+    'boxSizing', 'boxShadow', 'color', 'fontFamily', 'fontSize',
+    'fontWeight', 'gap', 'height', 'justifyContent', 'letterSpacing', 'lineHeight',
+    'maxHeight', 'minHeight', 'minWidth', 'paddingBottom', 'paddingLeft',
+    'paddingRight', 'paddingTop', 'textTransform', 'verticalAlign', 'whiteSpace',
+  ];
+
+  /**
+   * Copy the look of Classroom's own "Collapse all" button onto our button so
+   * the two controls form one consistent pair (only the label differs).
+   */
+  function styleSortButtonLike(btn, source, active) {
+    try {
+      const cs = getComputedStyle(source);
+      // Nothing useful to copy from a hidden button.
+      if (cs.display === 'none' || cs.visibility === 'hidden') return;
+      for (const prop of MIRRORED_STYLE_PROPS) {
+        const value = cs[prop];
+        if (value) btn.style[prop] = value;
+      }
+      if (cs.display) btn.style.display = cs.display;
+      // Sits to the left of "Collapse all" with the same gap it uses itself.
+      btn.style.marginRight = '8px';
+      btn.style.marginLeft = '0px';
+      btn.style.cursor = 'pointer';
+      if (active) {
+        btn.style.backgroundColor = 'rgba(11, 87, 208, 0.12)';
+        btn.style.borderColor = '#0b57d0';
+        btn.style.color = '#0b57d0';
+      }
+    } catch (_) {
+      // Computed styles are a nicety; the CSS fallback still applies.
+    }
+  }
+
+  let sortButtonStyleSource = null;
+
+  /** Re-apply the label and styling of the existing sort button. */
+  function refreshSortButton() {
+    const btn = document.getElementById('cpp-sort-toggle');
+    if (!btn) return;
+    btn.classList.toggle('cpp-sort-active', isReversed);
+    const textSpan = btn.querySelector('.cpp-sort-text');
+    if (textSpan) {
+      textSpan.textContent = isReversed ? 'Reverse order: ON' : 'Reverse order';
+    }
+    if (sortButtonStyleSource && sortButtonStyleSource.isConnected) {
+      styleSortButtonLike(btn, sortButtonStyleSource, isReversed);
+    }
+  }
+
   function ensureSortToggleButton() {
     const collapseBtn = findCollapseAllButton();
     let btn = document.getElementById('cpp-sort-toggle');
@@ -900,6 +1301,7 @@
       });
     }
 
+    // Place it immediately before "Collapse all" (its tooltip wrapper, if any).
     const insertTarget =
       collapseBtn.closest('[data-is-tooltip-wrapper="true"]') ||
       collapseBtn.closest('[data-is-touch-wrapper="true"]') ||
@@ -908,11 +1310,8 @@
       insertTarget.parentNode.insertBefore(btn, insertTarget);
     }
 
-    btn.classList.toggle('cpp-sort-active', isReversed);
-    const textSpan = btn.querySelector('.cpp-sort-text');
-    if (textSpan) {
-      textSpan.textContent = isReversed ? 'Reverse order: ON' : 'Reverse order';
-    }
+    sortButtonStyleSource = collapseBtn;
+    refreshSortButton();
   }
 
   function toggleSortOrder() {
@@ -980,16 +1379,16 @@
   const MAX_EXPANSION_ATTEMPTS = 30;
 
   /**
-   * Inject CSS to hide Google Classroom's native "View more" links.
-   * We replace them with our own 5-post scroll window + "View all" toggle.
+   * Inject CSS to hide the native "View more" button for topics we manage.
+   * Buttons are only hidden after we add `.cpp-native-view-more`, so topics
+   * that have not been enhanced keep Google's normal button.
    */
   function injectViewMoreHidingCSS() {
     if (viewMoreCssInjected) return;
     const style = document.createElement('style');
     style.id = 'cpp-hide-view-more';
     style.textContent = `
-      /* Classroom++ — Visually hide Google Classroom's native "View more" button */
-      button[aria-label*="View more" i],
+      /* Classroom++ — Visually hide a native "View more" button we manage */
       .cpp-native-view-more {
         position: absolute !important;
         opacity: 0 !important;
@@ -1005,7 +1404,7 @@
     `;
     (document.head || document.documentElement).appendChild(style);
     viewMoreCssInjected = true;
-    log('injected CSS to hide native View more');
+    log('injected CSS to hide managed View more buttons');
   }
 
   /**
@@ -1112,16 +1511,135 @@
   }
 
   /**
-   * Automatically expand all native "View more" buttons until all posts are revealed.
-   * Handles multi-batch loading for topics with many posts (e.g. 30+ posts per topic).
-   *
-   * Google loads posts in batches of 10. Each "View more" click triggers an XHR that
-   * appends 10 more posts to the topic's ol. For a topic with 40 posts, we need to
-   * click View more 3 times, waiting for each XHR to complete before the next button appears.
-   *
-   * The MutationObserver calls scheduleAutoExpansion() whenever new stream items or
-   * new View more buttons are added to the DOM, which covers the async XHR case.
-   * This function handles the eager initial pass with retries.
+   * Find the topic section that owns a post-list container.
+   */
+  function topicNodeForContainer(container) {
+    return (
+      container.closest('[data-topic-id]') ||
+      container.closest('section, [role="region"], [aria-label*="Topic" i]') ||
+      container.parentElement
+    );
+  }
+
+  function topicIdForNode(node) {
+    const topicNode = node && node.closest ? node.closest('[data-topic-id]') : null;
+    return topicNode
+      ? topicNode.dataset.topicId || topicNode.getAttribute('data-topic-id') || 'unknown'
+      : 'unknown';
+  }
+
+  /**
+   * Find the native "View more" button belonging to one topic only.
+   */
+  function findViewMoreForContainer(container) {
+    const topicNode = topicNodeForContainer(container);
+    if (!topicNode) return null;
+
+    for (const btn of topicNode.querySelectorAll('button, [role="button"]')) {
+      if (btn.dataset.cppClicked || !isViewMoreButton(btn)) continue;
+      const attempts = expansionAttemptsByTopic.get(topicIdForNode(btn)) || 0;
+      if (attempts < MAX_EXPANSION_ATTEMPTS) return btn;
+    }
+    return null;
+  }
+
+  /**
+   * Hide the native button for an enhanced topic (our scroll window takes over).
+   */
+  function hideViewMoreForContainer(container) {
+    const topicNode = topicNodeForContainer(container);
+    if (!topicNode) return;
+    for (const btn of topicNode.querySelectorAll('button, [role="button"]')) {
+      if (btn.dataset.cppClicked || isViewMoreButton(btn)) {
+        btn.classList.add('cpp-native-view-more');
+      }
+    }
+  }
+
+  /**
+   * Count posts currently present. Includes role="listitem" so fixtures and
+   * pages that don't expose data-stream-item-id still report progress.
+   */
+  function currentPostCount() {
+    return document.querySelectorAll('[data-stream-item-id], [role="listitem"]').length;
+  }
+
+  /**
+   * Wait until a View more click actually adds posts. Resolves immediately on
+   * the DOM mutation that appends the response and removes the clicked buttons,
+   * instead of always sleeping for a fixed 500 ms. When Google leaves a button
+   * connected, a short settle delay still protects parallel batch responses.
+   */
+  function waitForExpansionProgress(previousCount, clickedButtons) {
+    return new Promise((resolve) => {
+      let settled = false;
+      let sawProgress = false;
+      let settleTimer = 0;
+
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        observer.disconnect();
+        clearTimeout(timeout);
+        clearTimeout(settleTimer);
+        resolve();
+      };
+
+      const check = () => {
+        if (settled) return;
+
+        if (currentPostCount() > previousCount) sawProgress = true;
+
+        const allButtonsDone = clickedButtons.every((btn) => !btn.isConnected);
+        if (sawProgress && allButtonsDone) {
+          finish();
+          return;
+        }
+
+        // Some responses may arrive a little later than the first one. Give
+        // them a short grace period when the button remains in the DOM.
+        if (sawProgress) {
+          clearTimeout(settleTimer);
+          settleTimer = setTimeout(finish, 500);
+        }
+      };
+
+      const observer = new MutationObserver(check);
+      const timeout = setTimeout(finish, EXPANSION_WAIT_TIMEOUT);
+      observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
+      check();
+    });
+  }
+
+  /**
+   * Mark programmatic scroll changes so they don't look like the user asking
+   * for more posts.
+   */
+  function markProgrammaticScroll(container, ms = 700) {
+    container._cppIgnoreScrollUntil = Date.now() + ms;
+  }
+
+  let expansionRequested = false;
+  /**
+   * Expand every topic in the background whenever there is something left to
+   * fetch. A no-op when everything is already loaded, which is what keeps a
+   * return trip to the Classwork tab from reloading anything.
+   */
+  function requestExpansion(delay = 0) {
+    if (isExpanding || expansionRequested) return;
+    if (!isClassworkView()) return;
+    if (findUnclickedViewMore().length === 0) return;
+
+    expansionRequested = true;
+    window.setTimeout(() => {
+      expansionRequested = false;
+      triggerAutoExpansion();
+    }, delay);
+  }
+
+  /**
+   * Load every post of every topic by clicking Google's native "View more"
+   * until nothing is truncated, then apply the 5-post windows.
    */
   async function triggerAutoExpansion() {
     if (isExpanding) return;
@@ -1129,6 +1647,9 @@
     const initial = findUnclickedViewMore();
     if (initial.length === 0) return;
 
+    // Only the Classwork tab has posts to load, so only it gets the progress bar.
+    const showProgress = isClassworkView();
+    if (showProgress) beginSetup();
     isExpanding = true;
     injectViewMoreHidingCSS();
 
@@ -1136,10 +1657,20 @@
       // Click all currently-visible View more buttons. More rounds may be triggered
       // reactively by the MutationObserver as XHR responses arrive and new buttons appear.
       for (let round = 0; round < 20; round++) {
+        // The user may navigate to another tab mid-load; stop fetching there.
+        if (!isClassworkView()) break;
+
         const buttons = findUnclickedViewMore();
         if (buttons.length === 0) break;
 
         log(`expanding ${buttons.length} native View more button(s) (round ${round + 1})`);
+
+        // Update overlay: count total View more buttons remaining (each hides ~10 posts)
+        const countBefore = currentPostCount();
+        const loadedSoFar = document.querySelectorAll('[data-stream-item-id]').length;
+        const totalExpected = loadedSoFar + buttons.length * 10;
+        updateOverlay(loadedSoFar, totalExpected);
+
         for (const btn of buttons) {
           btn.dataset.cppClicked = 'true';
           btn.classList.add('cpp-native-view-more');
@@ -1151,21 +1682,42 @@
           triggerClick(btn);
         }
 
-        // Wait for XHR responses to arrive and new LI posts to be appended.
-        // School networks may be slow; 500ms gives most responses time to complete.
-        await new Promise((r) => setTimeout(r, 500));
+        // Resolve as soon as the XHR response appends posts instead of waiting
+        // a fixed 500 ms for every batch.
+        await waitForExpansionProgress(countBefore, buttons);
+        noteSetupActivity();
       }
     } catch (err) {
       console.error('[Classroom++] auto expansion error:', err);
     } finally {
       isExpanding = false;
-      scheduleScan(50);
-      setTimeout(() => recenterAllTopics(true), 300);
+      noteSetupActivity();
+
+      // Mark progress as complete (full bar).
+      const finalCount = document.querySelectorAll('[data-stream-item-id]').length;
+      if (finalCount > 0) updateOverlay(finalCount, finalCount);
+
+      // Apply the 5-post window, sort order and latest-post alignment now that
+      // every post is present. This replaces the old 50 ms + 300 ms delays.
+      if (scanTimer) {
+        clearTimeout(scanTimer);
+        scanTimer = 0;
+      }
+      scan();
+      recenterAllTopics(true);
+
+      // Restore scroll to top — loading caused the page to jump down
+      if (window.scrollY > 0) {
+        window.scrollTo({ top: 0, behavior: 'instant' });
+      }
+      noteSetupActivity();
     }
   }
 
   function scan() {
-    if (isDragging || scan._running) return;
+    // Don't rearrange while posts are still being appended; triggerAutoExpansion
+    // runs a final scan once every View more batch has arrived.
+    if (isDragging || isExpanding || scan._running) return;
     scan._running = true;
     try {
       ensureSortToggleButton();
@@ -1192,6 +1744,14 @@
     } finally {
       scan._running = false;
       lastScanAt = Date.now();
+      // No noteSetupActivity() here: routine scans (SPA mutations, re-renders)
+      // must not keep the global overlay alive. Only actual loading shows it.
+
+      // A topic may have appeared with posts still behind "View more" (new
+      // topic, new post, return trip). Finish loading it in the background.
+      if (!isExpanding && isClassworkView() && findUnclickedViewMore().length > 0) {
+        requestExpansion(60);
+      }
     }
   }
 
@@ -1231,7 +1791,12 @@
    * Check if current page is within the Classwork section.
    */
   function isClassworkView() {
-    if (document.querySelector('[data-topic-id]')) return true;
+    // A visible topic list means the Classwork view is the one on screen. A
+    // hidden one belongs to another tab, which has nothing to load (and must
+    // never show the progress bar).
+    const topicNode = document.querySelector('[data-topic-id]');
+    if (topicNode && topicNode.getClientRects().length > 0) return true;
+    if (topicNode) return false;
     const path = location.pathname;
     if (/\/(?:w|c)\/[^/]+\/(?:t\/|w)/.test(path) || /\/w\/[^/]+/.test(path)) {
       return true;
@@ -1257,11 +1822,16 @@
     // When the user enters Classwork, or exits and comes back:
     if (currentIsClasswork && (!lastWasClasswork || currentPath !== lastPath)) {
       resetAllToDefault();
+      scheduleScan(100);
+      // Only loads (and only shows the bar) if something is still behind
+      // "View more"; posts already on the page are reused as-is.
+      requestExpansion(0);
+    } else if (!currentIsClasswork && lastWasClasswork) {
+      cancelSetup();
     }
 
     lastPath = currentPath;
     lastWasClasswork = currentIsClasswork;
-    triggerAutoExpansion();
     scheduleScan(100);
   }
 
@@ -1278,22 +1848,14 @@
 
   function isOurNode(node) {
     const el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
-    return !!el && el.classList && el.classList.contains
-      ? el.classList.contains(CLASS.ui) || el.closest(`.${CLASS.ui}`) !== null
-      : false;
-  }
-
-  let autoExpansionTimer = 0;
-  function scheduleAutoExpansion(wait = 250) {
-    // Don't suppress scheduling when isExpanding — the expansion loop already
-    // handles its own rounds, but the MutationObserver may detect new View more
-    // buttons that appeared AFTER the last expansion loop ended. Allow a new
-    // timer to queue so those are picked up.
-    if (autoExpansionTimer) return;
-    autoExpansionTimer = window.setTimeout(() => {
-      autoExpansionTimer = 0;
-      triggerAutoExpansion();
-    }, wait);
+    if (!el || !el.classList || !el.classList.contains) return false;
+    return (
+      el.classList.contains(CLASS.ui) ||
+      el.classList.contains('cpp-loading-overlay') ||
+      el.id === 'cpp-sort-toggle' ||
+      el.closest(`.${CLASS.ui}`) !== null ||
+      el.closest('.cpp-loading-overlay') !== null
+    );
   }
 
   const observer = new MutationObserver((records) => {
@@ -1301,8 +1863,6 @@
     if (isDragging) return;
 
     let hasRelevantChanges = false;
-    let hasNewTopic = false;
-    let hasNewStreamItems = false;
 
     for (const record of records) {
       if (record.type !== 'childList') continue;
@@ -1312,37 +1872,13 @@
       if (allNodes.every(isOurNode)) continue;
 
       hasRelevantChanges = true;
-
-      if (addedNodes.length > 0) {
-        for (const n of addedNodes) {
-          if (n.nodeType !== Node.ELEMENT_NODE) continue;
-          // New topic section mounted (e.g. dynamic DOM / SPA navigation)
-          if (!hasNewTopic && (n.matches?.('[data-topic-id]') || n.querySelector?.('[data-topic-id]'))) {
-            hasNewTopic = true;
-          }
-          // New stream items added to an existing topic (View more XHR response arrived)
-          // This is the critical case: Google appended new LI posts to an existing ol.
-          if (!hasNewStreamItems && (
-            n.matches?.('[data-stream-item-id]') ||
-            n.querySelector?.('[data-stream-item-id]') ||
-            n.matches?.('.Mvr5Ef') ||
-            n.querySelector?.('.Mvr5Ef') ||
-            n.matches?.('[jsname="t6Kl7b"]') ||
-            n.querySelector?.('[jsname="t6Kl7b"]')
-          )) {
-            hasNewStreamItems = true;
-          }
-        }
-      }
     }
 
     if (!hasRelevantChanges) return;
 
-    if (hasNewTopic || hasNewStreamItems) {
-      // New posts loaded via View more XHR — schedule another expansion pass
-      // to click any newly revealed View more buttons for this or other topics.
-      scheduleAutoExpansion(hasNewTopic ? 300 : 500);
-    }
+    // New topics are enhanced silently. The scan itself starts a background
+    // load only when a topic is actually truncated, so ordinary SPA mutations
+    // never resurrect the loading bar.
     scheduleScan(120);
   });
 
@@ -1388,7 +1924,17 @@
     injectViewMoreHidingCSS();
     setupGlobalDragHandlers();
     observer.observe(document.documentElement, { childList: true, subtree: true });
-    window.addEventListener('resize', () => scheduleScan());
+    window.addEventListener('resize', () => {
+      // Re-measure the 5-post windows from scratch.
+      for (const container of activeContainers) {
+        const st = stateByContainer.get(container);
+        if (!st) continue;
+        st.windowHeight = 0;
+        st.baseWindowHeight = 0;
+        st.baseItemHeights = null;
+      }
+      scheduleScan();
+    });
     window.addEventListener('popstate', onNavigationChange);
     window.addEventListener('hashchange', onNavigationChange);
 
@@ -1417,23 +1963,19 @@
           (role === 'tab' || target.tagName === 'A') &&
           (text.includes('classwork') || label.includes('classwork') || href.includes('/w/'))
         ) {
+          // Reuse whatever is already loaded: no bar unless posts are missing.
           resetAllToDefault();
-          triggerAutoExpansion();
           scheduleScan(150);
+          requestExpansion(150);
         }
       },
       true
     );
 
-    // Unhide all posts by expanding Google's View more buttons, then scan.
-    // Fire multiple passes at increasing delays to handle slow page/network load.
-    // The MutationObserver will continue to react to new posts as XHR responses arrive.
-    triggerAutoExpansion();
+    // Load every post of every topic, then apply the 5-post windows.
+    // On later visits the posts are already in the DOM and nothing is fetched.
     scan();
-    setTimeout(triggerAutoExpansion, 300);
-    setTimeout(triggerAutoExpansion, 800);
-    setTimeout(triggerAutoExpansion, 2000);
-    setTimeout(triggerAutoExpansion, 4000);
+    requestExpansion(0);
   }
 
   if (document.readyState === 'loading') {
@@ -1453,6 +1995,8 @@
     resetAllToDefault,
     expandAllTopics: triggerAutoExpansion,
     triggerAutoExpansion,
+    requestExpansion,
+    syncWindowHeight,
     toggleSortOrder,
     getIsReversed: () => isReversed,
     recenterAllTopics,

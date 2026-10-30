@@ -53,6 +53,11 @@
     <h2>Topic Seven (All Drafts)</h2>
     <div class="posts" id="list-7" role="list"></div>
   </section>
+  <section id="topic-9" data-topic-id="877248554001">
+    <h2>Topic Nine (Two View More Batches)</h2>
+    <div class="posts" id="list-9" role="list"></div>
+    <div id="view-more-9-host"></div>
+  </section>
   <div id="topic-8" class="jHgkif" data-topic-id="877248554888">
     <div class="jLMcgc" data-topic-id="877248554888">
       <h2>Topic Eight (With Dropdown Menu)</h2>
@@ -140,6 +145,29 @@ fill('list-8', 6, false);
 // Initially only 3 posts are visible, with Google's native "View more" button.
 // When clicked, Google Classroom adds 4 more posts (total 7) and removes the button.
 fill('list-6', 3, false);
+// list-9 starts at 6 posts and needs TWO "View more" clicks to reach 16.
+fill('list-9', 6, false);
+(function () {
+  const host = document.getElementById('view-more-9-host');
+  function addViewMore() {
+    const b = document.createElement('button');
+    b.setAttribute('jsname', 't6Kl7b');
+    b.setAttribute('aria-label', 'View more posts');
+    b.textContent = 'View more';
+    b.addEventListener('click', () => {
+      const list = document.getElementById('list-9');
+      const from = list.children.length;
+      for (let i = from; i < Math.min(from + 5, 16); i++) {
+        list.appendChild(buildPost('list-9', i, false, false));
+      }
+      b.remove();
+      if (list.children.length < 16) addViewMore();
+    }, { once: true });
+    host.appendChild(b);
+  }
+  addViewMore();
+})();
+
 const gBtn = document.getElementById('google-view-more-btn');
 if (gBtn) {
   gBtn.addEventListener('click', () => {
@@ -159,8 +187,17 @@ if (gBtn) {
   const lines = [];
   const ok = (name, cond, detail) => lines.push(`${cond ? 'PASS' : 'FAIL'} ${name}${detail ? ' — ' + detail : ''}`);
   const approx = (a, b, tol) => Math.abs(a - b) <= tol;
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const waitFor = async (cond, timeout = 4000) => {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      if (cond()) return true;
+      await wait(50);
+    }
+    return cond();
+  };
 
-  function run() {
+  async function run() {
     const api = window.__classroomPlusPlus;
     ok('test hook exposed', !!api);
     if (api) api.scan();
@@ -245,22 +282,68 @@ if (gBtn) {
     ok('list-3 has no toggle', !(list3.nextElementSibling && list3.nextElementSibling.classList.contains('cpp-ui')));
     ok('sidebar untouched', !sidebar.classList.contains('cpp-scroll-window'));
 
-    // 8. Auto-expand Google native "View more" buttons to unhide all posts
+    // 8. Google's native "View more" is clicked on setup: every post is
+    // loaded up front, without the user scrolling.
     const list6 = document.getElementById('list-6');
-    ok('list-6 auto-expanded from Google View more to 7 posts', list6.children.length === 7,
-      `got ${list6.children.length} items`);
-    ok('list-6 enhanced with 5-post window', list6.classList.contains('cpp-scroll-window'));
+    ok('list-6 enhanced with scroll window even while truncated', list6.classList.contains('cpp-scroll-window'));
     const btn6 = list6.nextElementSibling && list6.nextElementSibling.querySelector('.cpp-toggle');
     ok('list-6 toggle exists', !!btn6);
     const labelSpan6 = btn6 && btn6.querySelector('.cpp-toggle-text');
+    await waitFor(() => list6.children.length === 7);
+    ok('list-6 bulk-loads all 7 posts without scrolling', list6.children.length === 7,
+      `got ${list6.children.length} items`);
     ok('list-6 toggle label is View all (7)',
       !!labelSpan6 && labelSpan6.textContent === 'View all (7)',
       `got "${labelSpan6 && labelSpan6.textContent}"`);
     const gBtnRemaining = document.getElementById('google-view-more-btn');
     ok('Google native View more button removed or hidden',
-      !gBtnRemaining || gBtnRemaining.classList.contains('cpp-hidden-view-more'));
+      !gBtnRemaining || gBtnRemaining.classList.contains('cpp-hidden-view-more') || gBtnRemaining.classList.contains('cpp-native-view-more'));
+    await waitFor(() => !document.querySelector('.cpp-loading-overlay.cpp-loading-visible'));
+    const overlayVisible = !!document.querySelector('.cpp-loading-overlay.cpp-loading-visible');
+    ok('loading overlay hides after setup (never stuck)', !overlayVisible,
+      overlayVisible ? 'overlay still visible' : 'overlay gone');
 
-    // 9. Sort order toggle button (Requirement 4)
+    // 9. Returning to the Classwork tab reuses the posts already loaded:
+    // nothing is fetched again and no progress bar appears.
+    await wait(800); // let the overlay leave the DOM
+    const loadedBefore = document.querySelectorAll('[role="listitem"]').length;
+    api.requestExpansion(0);
+    api.scan();
+    await wait(400);
+    ok('return trip loads nothing again (post count unchanged)',
+      document.querySelectorAll('[role="listitem"]').length === loadedBefore,
+      `before=${loadedBefore} after=${document.querySelectorAll('[role="listitem"]').length}`);
+    ok('no loading bar for an already-loaded page',
+      !document.querySelector('.cpp-loading-overlay'),
+      document.querySelector('.cpp-loading-overlay') ? 'overlay present' : 'no overlay');
+
+    // 10. Expanding a post grows the scroll window by the same amount so the
+    // whole post stays visible.
+    const windowBefore = list1.clientHeight;
+    const grownPost = list1.children[0];
+    // Classroom expands a post when it is clicked.
+    grownPost.style.height = '300px';
+    grownPost.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await waitFor(() => list1.clientHeight > windowBefore + 100, 2000);
+    ok('scroll window grows by the post expansion amount',
+      approx(list1.clientHeight, windowBefore + 240, 4),
+      `window ${windowBefore} -> ${list1.clientHeight}`);
+    grownPost.style.height = '';
+    grownPost.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await waitFor(() => approx(list1.clientHeight, windowBefore, 4), 2000);
+    ok('scroll window shrinks back when the post collapses',
+      approx(list1.clientHeight, windowBefore, 4),
+      `window now ${list1.clientHeight}, want ${windowBefore}`);
+
+    // 11b. A topic that needs several native batches is loaded completely
+    // without any user scrolling.
+    const list9 = document.getElementById('list-9');
+    await waitFor(() => list9.children.length === 16, 6000);
+    ok('list-9 loads every batch on setup (16 posts)', list9.children.length === 16,
+      `got ${list9.children.length} items`);
+    ok('no View more button is left for list-9', !list9.parentElement.querySelector('[jsname="t6Kl7b"]'));
+
+    // 11. Sort order toggle button (Requirement 4)
     const sortBtn = document.getElementById('cpp-sort-toggle');
     const collapseAllBtn = document.getElementById('google-collapse-all');
     ok('sort toggle button created', !!sortBtn);
@@ -268,6 +351,24 @@ if (gBtn) {
       !!sortBtn && sortBtn.nextElementSibling === collapseAllBtn);
     ok('sort toggle default text',
       !!sortBtn && sortBtn.textContent.includes('Reverse order'));
+
+    // Its styling is copied from the Collapse all button.
+    const sortCS = getComputedStyle(sortBtn);
+    const collapseCS = getComputedStyle(collapseAllBtn);
+    ok('sort button matches Collapse all padding',
+      sortCS.paddingTop === collapseCS.paddingTop && sortCS.paddingLeft === collapseCS.paddingLeft,
+      `${sortCS.paddingTop}/${sortCS.paddingLeft} vs ${collapseCS.paddingTop}/${collapseCS.paddingLeft}`);
+    ok('sort button matches Collapse all corner radius',
+      sortCS.borderTopLeftRadius === collapseCS.borderTopLeftRadius,
+      `${sortCS.borderTopLeftRadius} vs ${collapseCS.borderTopLeftRadius}`);
+    ok('sort button matches Collapse all border',
+      sortCS.borderTopColor === collapseCS.borderTopColor && sortCS.borderTopWidth === collapseCS.borderTopWidth,
+      `${sortCS.borderTopColor} vs ${collapseCS.borderTopColor}`);
+    ok('sort button matches Collapse all background',
+      sortCS.backgroundColor === collapseCS.backgroundColor,
+      `${sortCS.backgroundColor} vs ${collapseCS.backgroundColor}`);
+    ok('sort button matches Collapse all font',
+      sortCS.fontSize === collapseCS.fontSize && sortCS.fontFamily === collapseCS.fontFamily);
 
     // Toggle sort order ON: should reverse items in all topic scroll windows
     if (sortBtn) sortBtn.click();
@@ -328,6 +429,24 @@ if (gBtn) {
     document.body.appendChild(hiddenContainer);
     ok('hidden View more button not clicked', !fakeBtn.dataset.cppClicked);
     hiddenContainer.remove();
+
+    // 15. Clicking "View fewer" collapses the topic but keeps the button the
+    // user just clicked at the same place on screen (no jump to page bottom).
+    btn7.click(); // expand "View all (8)"
+    await wait(150);
+    ok('list-7 expanded for anchor test', list7.classList.contains('cpp-expanded'));
+    window.scrollBy(0, btn7.getBoundingClientRect().top - 220);
+    await wait(80);
+    const anchorTop = btn7.getBoundingClientRect().top;
+    btn7.click(); // collapse back to "View all (8)"
+    await wait(500);
+    ok('collapse keeps the toggle at the same screen position',
+      approx(btn7.getBoundingClientRect().top, anchorTop, 8),
+      `${anchorTop.toFixed(1)} -> ${btn7.getBoundingClientRect().top.toFixed(1)}`);
+    ok('collapsed toggle label is View all again',
+      !!btn7.querySelector('.cpp-toggle-text') &&
+        btn7.querySelector('.cpp-toggle-text').textContent === 'View all (8)',
+      `got "${btn7.querySelector('.cpp-toggle-text').textContent}"`);
 
     const failed = lines.filter((l) => l.startsWith('FAIL')).length;
     lines.push(failed === 0 ? 'ALL TESTS PASSED' : `${failed} TEST(S) FAILED`);

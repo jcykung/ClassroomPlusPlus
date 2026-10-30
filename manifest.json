@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Classroom++",
   "short_name": "Classroom++",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Makes Google Classroom Classwork topics vertically scrollable: up to 5 posts at a time, centered on the newest post, with a View all toggle.",
   "minimum_chrome_version": "116",
   "author": "Jonathan Kung",
