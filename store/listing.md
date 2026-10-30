@@ -49,8 +49,8 @@ CLASSWORK LAYOUT
   in every topic.
 • Opening a post to edit it grows its scroll area by the same amount, so the whole post
   stays visible.
-• Topics you have already visited keep their layout, and nothing is re-fetched when you
-  come back to a class.
+• The first time you open a class's Classwork in a tab it refreshes once so its posts are
+  current; coming back to that class keeps its layout and re-fetches nothing.
 
 BULK SELECT ON TO REVIEW
 • A checkbox on each assignment in To review, with "Select all" and a floating action bar.

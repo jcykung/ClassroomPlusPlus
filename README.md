@@ -21,9 +21,10 @@ Google LLC.
   every topic; its look is copied from that button at runtime.
 - **Editing stays visible.** Opening a post grows its scroll area by exactly the amount the post
   grew, so the whole post is visible.
-- **Works in every class.** Enhancement is applied in any class, archived ones included. A class
-  you have already visited keeps its layout, so returning to it is instant and nothing is fetched
-  twice.
+- **Works in every class.** Enhancement is applied in any class, archived ones included. The first
+  time you enter a class's Classwork in a tab, the page refreshes once so the posts are current;
+  revisiting it keeps its layout and does not fetch twice. That load state lives in the tab's
+  `sessionStorage`, never in synced storage, so it cannot follow you to another browser.
 
 ### To review: bulk select
 
@@ -57,6 +58,9 @@ Changing a switch refreshes any open Classroom tabs so the new layout is live im
 1. Open `chrome://extensions` and enable **Developer mode**.
 2. Click **Load unpacked** and select this directory (the one containing `manifest.json`).
 3. Open any Google Classroom **Classwork** page.
+
+> On install, every open Google Classroom tab is reloaded automatically so the extension starts
+> working without a manual refresh.
 
 > After changing code, press the ⟳ reload button on the Classroom++ card, then refresh Classroom.
 

@@ -6,7 +6,13 @@
       body {
         width: 360px;
         margin: 0;
-        font-family: Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+        font-family:
+          Roboto,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          Arial,
+          sans-serif;
         background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%);
         color: #333;
         padding: 16px 18px 14px 18px;
@@ -55,11 +61,19 @@
         color: #fff;
         border: none;
         border-radius: 20px;
-        font-family: Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+        font-family:
+          Roboto,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          Arial,
+          sans-serif;
         font-size: 12px;
         font-weight: 600;
         cursor: pointer;
-        transition: background 0.2s ease, transform 0.15s ease;
+        transition:
+          background 0.2s ease,
+          transform 0.15s ease;
         white-space: nowrap;
       }
       .tip-btn:hover {
@@ -81,7 +95,9 @@
         justify-content: space-between;
         align-items: center;
         margin-bottom: 8px;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        transition:
+          transform 0.2s ease,
+          box-shadow 0.2s ease;
       }
       .card:hover {
         transform: translateY(-1px);
@@ -124,7 +140,9 @@
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
         opacity: 0;
         pointer-events: none;
-        transition: opacity 0.2s ease, transform 0.2s ease;
+        transition:
+          opacity 0.2s ease,
+          transform 0.2s ease;
         z-index: 100;
         white-space: normal;
       }
@@ -139,7 +157,9 @@
         border-color: #1a202c transparent transparent transparent;
         opacity: 0;
         pointer-events: none;
-        transition: opacity 0.2s ease, transform 0.2s ease;
+        transition:
+          opacity 0.2s ease,
+          transform 0.2s ease;
         z-index: 100;
       }
       .info-icon:hover::after,
@@ -219,7 +239,9 @@
         color: #a0aec0;
         text-decoration: none;
         cursor: pointer;
-        transition: color 0.2s ease, text-decoration 0.2s ease;
+        transition:
+          color 0.2s ease,
+          text-decoration 0.2s ease;
       }
       .version-link:hover {
         color: #16803c;
@@ -243,7 +265,9 @@
           fill="none"
         >
           <g transform="scale(0.09)">
-            <g transform="translate(1.4065934065934016 1.4065934065934016) scale(2.81 2.81)">
+            <g
+              transform="translate(1.4065934065934016 1.4065934065934016) scale(2.81 2.81)"
+            >
               <path
                 d="M 35.982 81.106 c -13.1 0 -23.756 -5.859 -30.002 -16.498 C 0.451 55.282 0 45.181 0 33.895 c 0 -6.691 2.013 -12.517 5.819 -16.849 c 3.497 -3.979 8.453 -6.556 13.956 -7.258 c 6.532 -0.828 14.654 -0.896 23.097 -0.896 c 13.74 0 17.622 0.168 23.028 0.709 c 7.192 0.714 13.243 3.398 17.496 7.763 C 87.717 21.798 90 27.718 90 34.492 v 1.361 c 0 11.559 -7.727 21.233 -18.497 23.863 c -0.804 1.897 -1.8 3.784 -2.978 5.643 l -0.031 0.047 C 64.7 71.271 55.782 81.108 38.701 81.108 h -2.722 L 35.982 81.106 z"
                 fill="#fff"
@@ -277,7 +301,7 @@
         Classwork Layout
         <span
           class="info-icon"
-          data-tooltip="Every Classwork change in one switch: topics become scrollable 5-post windows, all posts load up front, the newest published post is centered, and View all / View fewer plus the Reverse order button are added. Turn it off to leave Classwork exactly as Google built it."
+          data-tooltip="Every Classwork change in one switch: topics become scrollable 5-post windows, the newest published post is centered, and View all / View fewer plus the Reverse order button are added."
         ></span>
       </div>
       <label class="switch">
@@ -292,7 +316,7 @@
         Bulk Select on To Review
         <span
           class="info-icon"
-          data-tooltip="Adds a checkbox to each assignment on the To review page, with Select all and a floating bar that marks the whole batch as reviewed in one go. Shift-click after ticking one box to grab every row in between."
+          data-tooltip="Batch delete multiple items on your 'To Review' list."
         ></span>
       </div>
       <label class="switch">
@@ -307,10 +331,9 @@
 
     <div class="footer-bar">
       <a href="#" class="welcome-link" id="welcomeLink">Show Welcome Screen</a>
-      <a href="#" class="version-link" id="versionLink">v. 1.0.0</a>
+      <a href="#" class="version-link" id="versionLink">v. 1.0.1</a>
     </div>
 
     <script src="popup.js"></script>
   </body>
 </html>
-

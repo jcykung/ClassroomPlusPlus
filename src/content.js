@@ -12,8 +12,10 @@
  *    the latest published post (not drafts) is aligned to the middle
  *    of the scroll (the 3rd post of the 5 showing), allowing the user to
  *    see what came before and what needs to be edited and posted next.
- * 4. Returning to the Classwork tab reuses the posts that are already on the
- *    page: the loading bar only appears when there is actually work to do.
+ * 4. The first time a class's Classwork is opened in a tab, the page reloads
+ *    once so its posts are current. Returning to that class afterwards reuses
+ *    the posts already on the page: the loading bar only appears when there is
+ *    actually work to do.
  */
 (() => {
   'use strict';
@@ -89,6 +91,48 @@
       return false;
     }
   })();
+
+  /**
+   * Class ids whose Classwork posts have already been freshly loaded in this
+   * browser tab. sessionStorage is deliberately tab-local: it is never synced
+   * to another browser or device, and it disappears when the tab closes, so a
+   * previous session can never make the extension skip loading a class.
+   */
+  const LOADED_CLASSES_STORAGE_KEY = 'cpp_loaded_classes';
+  const loadedClassesFallback = new Set();
+
+  function readLoadedClasses() {
+    try {
+      const raw = sessionStorage.getItem(LOADED_CLASSES_STORAGE_KEY);
+      if (!raw) return new Set();
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? new Set(parsed.map(String)) : new Set();
+    } catch (_) {
+      return new Set(loadedClassesFallback);
+    }
+  }
+
+  function rememberLoadedClass(classId) {
+    if (!classId) return;
+    loadedClassesFallback.add(classId);
+    try {
+      const loaded = readLoadedClasses();
+      loaded.add(classId);
+      sessionStorage.setItem(LOADED_CLASSES_STORAGE_KEY, JSON.stringify(Array.from(loaded)));
+    } catch (_) {}
+  }
+
+  function hasLoadedClass(classId) {
+    if (!classId) return true;
+    if (loadedClassesFallback.has(classId)) return true;
+    return readLoadedClasses().has(classId);
+  }
+
+  /** The class id from /c/<id>, /w/<id>, /u/<n>/c/<id> or /u/<n>/w/<id>. */
+  function currentClassId() {
+    const match = location.pathname.match(/\/(?:u\/\d+\/)?(?:c|w)\/([^/?#]+)/i);
+    return match ? match[1] : '';
+  }
 
   function saveSettings() {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.sync) {
@@ -2006,6 +2050,18 @@
   }
 
   /**
+   * A Classwork route (/c/<id>/t/all, /w/<id>/t/<topicId>) or a query that
+   * names the Classwork view. Archived classes render the same tab with
+   * different chrome, so the route is the most reliable signal.
+   */
+  function isClassworkPath() {
+    return (
+      /\/t\/(?:all|[^/]+)\/?$/i.test(location.pathname) ||
+      /[?&]tab=classwork\b/i.test(location.search)
+    );
+  }
+
+  /**
    * Check if current page is within the Classwork section.
    *
    * Only the Classwork tab may be enhanced. Its topic sections are the only
@@ -2018,13 +2074,12 @@
     const topicNode = document.querySelector('[data-topic-id]');
     if (topicNode && topicNode.getClientRects().length > 0) return true;
 
-    // A classwork route (/c/<id>/t/all, /w/<id>/t/<topicId>) or a title that
-    // names the Classwork view is authoritative. Archived classes render the
-    // same tab with different chrome — their tab strip is missing or does not
-    // expose the selected tab — and requiring those signals made the extension
-    // skip every archived class entirely.
-    if (/\/t\/(?:all|[^/]+)\/?$/i.test(location.pathname)) return true;
-    if (/[?&]tab=classwork\b/i.test(location.search)) return true;
+    // A classwork route or a title that names the Classwork view is
+    // authoritative. Archived classes render the same tab with different
+    // chrome — their tab strip is missing or does not expose the selected tab —
+    // and requiring those signals made the extension skip every archived class
+    // entirely.
+    if (isClassworkPath()) return true;
     if (/(?:^|[-–—|·:]\s*)classwork\s*$/i.test(document.title || '')) return true;
 
     // Classroom's own navigation, because a class' Stream page shares the class
@@ -2059,6 +2114,37 @@
     return hasVisibleTopics() || isClassworkView();
   }
 
+  /**
+   * A full page load already has fresh posts, so record the class as loaded
+   * before the user navigates away from it.
+   */
+  function rememberCurrentClassOnLoad() {
+    if (isToReviewView()) return;
+    if (!isClassworkPath() && !isClassworkView()) return;
+    const classId = currentClassId();
+    if (classId) rememberLoadedClass(classId);
+  }
+
+  /**
+   * Classwork is a single-page view: Classroom reuses the posts already on the
+   * page, so a class visited earlier in this tab would never fetch new posts.
+   * Force one full reload the first time each class is entered in this tab.
+   * The class is recorded before reloading so the reloaded page does not loop.
+   */
+  function reloadOnceForFreshPosts() {
+    if (!classworkLayoutEnabled) return false;
+    if (isToReviewView()) return false;
+    if (!isClassworkView()) return false;
+
+    const classId = currentClassId();
+    if (!classId || hasLoadedClass(classId)) return false;
+
+    rememberLoadedClass(classId);
+    log(`entering class ${classId}: reloading for fresh posts`);
+    location.reload();
+    return true;
+  }
+
   let lastPath = location.pathname;
   let lastWasClasswork = isClassworkView();
 
@@ -2068,6 +2154,13 @@
 
     // When the user enters Classwork, or exits and comes back:
     if (currentIsClasswork && (!lastWasClasswork || currentPath !== lastPath)) {
+      // A class entering Classwork for the first time in this tab gets a fresh
+      // page load; revisiting it reuses the posts already on the page.
+      if (reloadOnceForFreshPosts()) {
+        lastPath = currentPath;
+        lastWasClasswork = currentIsClasswork;
+        return;
+      }
       resetAllToDefault();
       scheduleScan(100);
       // Only loads (and only shows the bar) if something is still behind
@@ -2608,6 +2701,9 @@
 
   function init() {
     loadInitialSettings();
+    // This page load already has fresh posts; remember the class so navigating
+    // away and back in this tab does not trigger another reload.
+    rememberCurrentClassOnLoad();
     // Nothing is ever fetched or hidden outside the Classwork tab.
     if (isClassworkView()) injectViewMoreHidingCSS();
     setupGlobalDragHandlers();
