@@ -31,7 +31,11 @@ chrome.runtime.onInstalled.addListener((details) => {
       classworkLayout: true,
       bulkReview: true,
       firstRun: true
-    }, reloadClassroomTabs);
+    });
+    // Refresh right away rather than after the sync write settles: waiting on
+    // storage can land the reload a few seconds later, just as the user is
+    // opening a class, which looked like a second, unexpected refresh.
+    reloadClassroomTabs();
     chrome.tabs.create({ url: 'onboarding.html' });
   } else if (details.reason === 'update') {
     // Automatically open the changelog page on update

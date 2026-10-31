@@ -21,10 +21,9 @@ Google LLC.
   every topic; its look is copied from that button at runtime.
 - **Editing stays visible.** Opening a post grows its scroll area by exactly the amount the post
   grew, so the whole post is visible.
-- **Works in every class.** Enhancement is applied in any class, archived ones included. The first
-  time you enter a class's Classwork in a tab, the page refreshes once so the posts are current;
-  revisiting it keeps its layout and does not fetch twice. That load state lives in the tab's
-  `sessionStorage`, never in synced storage, so it cannot follow you to another browser.
+- **Works in every class.** Enhancement is applied in any class, archived ones included. Entering
+  Classwork never forces a page reload: the view mounts fresh, so its posts come from Classroom, and
+  revisiting a class keeps its layout and does not fetch anything twice.
 
 ### To review: bulk select
 

@@ -16,10 +16,20 @@
 </style>
 </head>
 <body>
+<!-- A previously visited class's toolbar, parked in the DOM ahead of the class
+     on screen, exactly as Classroom leaves it after a class switch. -->
+<div id="parked-header" style="display: none;">
+  <button id="parked-collapse-all" type="button" aria-label="Collapse all topics">
+    <span>Collapse all</span>
+  </button>
+</div>
 <div role="main">
   <div class="stream-header-actions" style="display: flex; justify-content: flex-end; align-items: center; margin-bottom: 16px;">
     <button id="google-collapse-all" type="button" aria-label="Collapse all topics" style="padding: 6px 12px; border-radius: 4px; border: 1px solid #dadce0; background: #fff; cursor: pointer;">
       <span style="font-family: 'Google Sans Text', Roboto, Arial, sans-serif; font-size: 14px; font-weight: 500; color: #444746;">Collapse all</span>
+      <!-- Hidden tooltip text, as Classroom keeps it inside the same button. Its
+           white-on-dark colour must never be copied onto our label. -->
+      <span style="display: none; color: #ffffff;">Collapse all</span>
     </button>
   </div>
   <section id="topic-1">
@@ -360,6 +370,11 @@ new MutationObserver(() => {
     ok('sort toggle button created', !!sortBtn);
     ok('sort toggle button placed to the left of Collapse all',
       !!sortBtn && sortBtn.nextElementSibling === collapseAllBtn);
+    ok('sort button is anchored to the on-screen Collapse all, not a parked class',
+      !!sortBtn && sortBtn.getClientRects().length > 0,
+      sortBtn ? `${sortBtn.getClientRects().length} box(es)` : 'missing');
+    ok('no sort button in the parked toolbar',
+      !document.getElementById('parked-header').querySelector('#cpp-sort-toggle'));
     ok('sort toggle default text',
       !!sortBtn && sortBtn.textContent.includes('Reverse order'));
 

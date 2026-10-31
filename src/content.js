@@ -12,9 +12,9 @@
  *    the latest published post (not drafts) is aligned to the middle
  *    of the scroll (the 3rd post of the 5 showing), allowing the user to
  *    see what came before and what needs to be edited and posted next.
- * 4. The first time a class's Classwork is opened in a tab, the page reloads
- *    once so its posts are current. Returning to that class afterwards reuses
- *    the posts already on the page: the loading bar only appears when there is
+ * 4. Entering a class's Classwork never forces a page reload: the view mounts
+ *    fresh, so its posts come from Classroom, and returning to a class reuses
+ *    the posts already on the page. The loading bar only appears when there is
  *    actually work to do.
  */
 (() => {
@@ -91,48 +91,6 @@
       return false;
     }
   })();
-
-  /**
-   * Class ids whose Classwork posts have already been freshly loaded in this
-   * browser tab. sessionStorage is deliberately tab-local: it is never synced
-   * to another browser or device, and it disappears when the tab closes, so a
-   * previous session can never make the extension skip loading a class.
-   */
-  const LOADED_CLASSES_STORAGE_KEY = 'cpp_loaded_classes';
-  const loadedClassesFallback = new Set();
-
-  function readLoadedClasses() {
-    try {
-      const raw = sessionStorage.getItem(LOADED_CLASSES_STORAGE_KEY);
-      if (!raw) return new Set();
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? new Set(parsed.map(String)) : new Set();
-    } catch (_) {
-      return new Set(loadedClassesFallback);
-    }
-  }
-
-  function rememberLoadedClass(classId) {
-    if (!classId) return;
-    loadedClassesFallback.add(classId);
-    try {
-      const loaded = readLoadedClasses();
-      loaded.add(classId);
-      sessionStorage.setItem(LOADED_CLASSES_STORAGE_KEY, JSON.stringify(Array.from(loaded)));
-    } catch (_) {}
-  }
-
-  function hasLoadedClass(classId) {
-    if (!classId) return true;
-    if (loadedClassesFallback.has(classId)) return true;
-    return readLoadedClasses().has(classId);
-  }
-
-  /** The class id from /c/<id>, /w/<id>, /u/<n>/c/<id> or /u/<n>/w/<id>. */
-  function currentClassId() {
-    const match = location.pathname.match(/\/(?:u\/\d+\/)?(?:c|w)\/([^/?#]+)/i);
-    return match ? match[1] : '';
-  }
 
   function saveSettings() {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.sync) {
@@ -1318,7 +1276,11 @@
         text.includes('collapse all') || text.includes('expand all') ||
         text.includes('tout réduire') || text.includes('tout développer')
       ) {
-        return btn;
+        // Classroom parks previously visited classes' views — and their
+        // toolbars — in the DOM, ahead of the class on screen. Anchoring to one
+        // of those put our button inside a hidden subtree, so it only appeared
+        // after a page reload. Only a control with a box on screen counts.
+        if (btn.getClientRects().length) return btn;
       }
     }
 
@@ -1327,7 +1289,13 @@
     const firstTopic = main.querySelector('[data-topic-id], section, h2');
     if (firstTopic && firstTopic.parentElement) {
       const candidateBtn = firstTopic.parentElement.querySelector('button');
-      if (candidateBtn && candidateBtn.id !== 'cpp-sort-toggle') return candidateBtn;
+      if (
+        candidateBtn &&
+        candidateBtn.id !== 'cpp-sort-toggle' &&
+        candidateBtn.getClientRects().length
+      ) {
+        return candidateBtn;
+      }
     }
 
     return null;
@@ -1356,23 +1324,39 @@
    * The element that actually renders a control's label text. Google wraps the
    * "Collapse all" label in its own <span> that carries the real typography, so
    * the button's own computed font can differ from the glyphs on screen.
+   *
+   * Only rendered elements count. Classroom keeps a hidden copy of the label
+   * inside the same button (its tooltip), and a tooltip's colour is nothing
+   * like the label's — copying it made our text and icon invisible.
    */
   function findLabelElement(el) {
-    const label = (el.textContent || '').trim();
-    if (!label) return el;
     let best = el;
-    const walk = (node) => {
+    let bestDepth = 0;
+    const walk = (node, depth) => {
       for (const child of node.children) {
         if (child.namespaceURI === 'http://www.w3.org/2000/svg') continue;
-        // Only descend through elements holding exactly this control's label,
-        // so hidden extras (tooltips, ripple hosts) are never picked up.
-        if ((child.textContent || '').trim() !== label) continue;
-        best = child;
-        walk(child);
+        if (!(child.textContent || '').trim()) continue;
+        if (!child.getClientRects().length) continue;
+        if (depth + 1 > bestDepth) {
+          best = child;
+          bestDepth = depth + 1;
+        }
+        walk(child, depth + 1);
       }
     };
-    walk(el);
+    walk(el, 0);
     return best;
+  }
+
+  /** True for colours that would paint nothing, e.g. rgba(0, 0, 0, 0). */
+  function isTransparentColor(value) {
+    if (!value) return true;
+    const text = value.trim();
+    if (text === 'transparent') return true;
+    const match = /^rgba?\(([^)]+)\)$/.exec(text);
+    if (!match) return false;
+    const parts = match[1].split(/[,\s/]+/).filter(Boolean);
+    return parts.length >= 4 && parseFloat(parts[3]) === 0;
   }
 
   /**
@@ -1394,12 +1378,13 @@
       // text matches the "Collapse all" glyphs in type, colour and size.
       const labelEl = findLabelElement(source);
       const labelCS = labelEl === source ? cs : getComputedStyle(labelEl);
-      btn.style.color = labelCS.color;
+      // A fully transparent colour paints nothing; keep the CSS fallback.
+      if (!isTransparentColor(labelCS.color)) btn.style.color = labelCS.color;
       const textSpan = btn.querySelector('.cpp-sort-text');
       if (textSpan) {
         for (const prop of MIRRORED_TEXT_PROPS) {
           const value = labelCS[prop];
-          if (value) {
+          if (value && !(prop === 'color' && isTransparentColor(value))) {
             textSpan.style[prop] = value;
           } else {
             // Clear anything left over from a previous source button.
@@ -1452,6 +1437,10 @@
 
     // The button belongs to the Classwork tab only: never show it elsewhere.
     if (!onClassworkContent()) {
+      // Classroom hides a Classwork view for a moment while it re-renders a
+      // class. The button lives in the global toolbar, so leave it alone unless
+      // the page is clearly somewhere other than Classwork.
+      if (isClassworkPath() || document.querySelector('[data-topic-id]')) return;
       removeSortToggleButton();
       return;
     }
@@ -1904,6 +1893,18 @@
     if (changed || stuck) scheduleScan(0);
 
     ensurePostsLoaded();
+
+    // Keep the toolbar button there and on screen. Classroom re-renders its
+    // toolbar and parks old views in the DOM; a button dropped along the way, or
+    // left inside a hidden toolbar, would otherwise stay that way until the next
+    // unrelated scan (or a page reload).
+    const sortBtn = document.getElementById('cpp-sort-toggle');
+    if (
+      onClassworkContent() &&
+      (!sortBtn || !sortBtn.getClientRects().length)
+    ) {
+      ensureSortToggleButton();
+    }
   }
 
   /**
@@ -2164,37 +2165,6 @@
     return hasVisibleTopics() || isClassworkView();
   }
 
-  /**
-   * A full page load already has fresh posts, so record the class as loaded
-   * before the user navigates away from it.
-   */
-  function rememberCurrentClassOnLoad() {
-    if (isToReviewView()) return;
-    if (!isClassworkPath() && !isClassworkView()) return;
-    const classId = currentClassId();
-    if (classId) rememberLoadedClass(classId);
-  }
-
-  /**
-   * Classwork is a single-page view: Classroom reuses the posts already on the
-   * page, so a class visited earlier in this tab would never fetch new posts.
-   * Force one full reload the first time each class is entered in this tab.
-   * The class is recorded before reloading so the reloaded page does not loop.
-   */
-  function reloadOnceForFreshPosts() {
-    if (!classworkLayoutEnabled) return false;
-    if (isToReviewView()) return false;
-    if (!isClassworkView()) return false;
-
-    const classId = currentClassId();
-    if (!classId || hasLoadedClass(classId)) return false;
-
-    rememberLoadedClass(classId);
-    log(`entering class ${classId}: reloading for fresh posts`);
-    location.reload();
-    return true;
-  }
-
   let lastPath = location.pathname;
   let lastWasClasswork = isClassworkView();
 
@@ -2204,13 +2174,8 @@
 
     // When the user enters Classwork, or exits and comes back:
     if (currentIsClasswork && (!lastWasClasswork || currentPath !== lastPath)) {
-      // A class entering Classwork for the first time in this tab gets a fresh
-      // page load; revisiting it reuses the posts already on the page.
-      if (reloadOnceForFreshPosts()) {
-        lastPath = currentPath;
-        lastWasClasswork = currentIsClasswork;
-        return;
-      }
+      // Entering Classwork mounts the view fresh, so Classroom fetches that
+      // class's posts by itself; nothing needs reloading.
       resetAllToDefault();
       scheduleScan(100);
       // Only loads (and only shows the bar) if something is still behind
@@ -2303,6 +2268,12 @@
         };
       }),
       enhanced: activeContainers.size,
+      sortButtonPresent: !!document.getElementById('cpp-sort-toggle'),
+      collapseButtonFound: !!findCollapseAllButton(),
+      collapseCandidates: Array.from(document.querySelectorAll('button, [role="button"]'))
+        .filter((b) => b.getClientRects().length)
+        .slice(0, 25)
+        .map((b) => `${(b.getAttribute('aria-label') || '').trim()} | ${(b.textContent || '').trim()}`.slice(0, 80)),
     };
   }
 
@@ -2751,9 +2722,6 @@
 
   function init() {
     loadInitialSettings();
-    // This page load already has fresh posts; remember the class so navigating
-    // away and back in this tab does not trigger another reload.
-    rememberCurrentClassOnLoad();
     // Nothing is ever fetched or hidden outside the Classwork tab.
     if (isClassworkView()) injectViewMoreHidingCSS();
     setupGlobalDragHandlers();
