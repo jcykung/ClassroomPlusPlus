@@ -19,7 +19,7 @@
 <div role="main">
   <div class="stream-header-actions" style="display: flex; justify-content: flex-end; align-items: center; margin-bottom: 16px;">
     <button id="google-collapse-all" type="button" aria-label="Collapse all topics" style="padding: 6px 12px; border-radius: 4px; border: 1px solid #dadce0; background: #fff; cursor: pointer;">
-      <span>Collapse all</span>
+      <span style="font-family: 'Google Sans Text', Roboto, Arial, sans-serif; font-size: 14px; font-weight: 500; color: #444746;">Collapse all</span>
     </button>
   </div>
   <section id="topic-1">
@@ -378,8 +378,20 @@ new MutationObserver(() => {
     ok('sort button matches Collapse all background',
       sortCS.backgroundColor === collapseCS.backgroundColor,
       `${sortCS.backgroundColor} vs ${collapseCS.backgroundColor}`);
+    // Google renders the label inside its own span with the real typography
+    // (the button itself inherits the page font), so that is what must match.
+    const collapseLabelCS = getComputedStyle(collapseAllBtn.querySelector('span'));
+    const sortLabelCS = getComputedStyle(sortBtn.querySelector('.cpp-sort-text'));
     ok('sort button matches Collapse all font',
-      sortCS.fontSize === collapseCS.fontSize && sortCS.fontFamily === collapseCS.fontFamily);
+      sortCS.fontSize === collapseCS.fontSize && sortCS.fontFamily === collapseCS.fontFamily,
+      `${sortCS.fontFamily}/${sortCS.fontSize} vs ${collapseCS.fontFamily}/${collapseCS.fontSize}`);
+    ok('sort label matches Collapse all label font',
+      sortLabelCS.fontFamily === collapseLabelCS.fontFamily &&
+        sortLabelCS.fontSize === collapseLabelCS.fontSize,
+      `${sortLabelCS.fontFamily}/${sortLabelCS.fontSize} vs ${collapseLabelCS.fontFamily}/${collapseLabelCS.fontSize}`);
+    ok('sort label matches Collapse all label colour',
+      sortLabelCS.color === collapseLabelCS.color,
+      `${sortLabelCS.color} vs ${collapseLabelCS.color}`);
 
     // Toggle sort order ON: should reverse items in all topic scroll windows
     if (sortBtn) sortBtn.click();

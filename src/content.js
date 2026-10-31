@@ -1333,18 +1333,47 @@
     return null;
   }
 
-  /** Style properties mirrored from Google's "Collapse all" button. */
+  /** Box properties mirrored from Google's "Collapse all" button. */
   const MIRRORED_STYLE_PROPS = [
     'alignItems', 'backgroundImage', 'backgroundColor', 'borderBottomColor',
     'borderBottomLeftRadius', 'borderBottomRightRadius', 'borderBottomStyle',
     'borderBottomWidth', 'borderLeftColor', 'borderLeftStyle', 'borderLeftWidth',
     'borderRightColor', 'borderRightStyle', 'borderRightWidth', 'borderTopColor',
     'borderTopLeftRadius', 'borderTopRightRadius', 'borderTopStyle', 'borderTopWidth',
-    'boxSizing', 'boxShadow', 'color', 'fontFamily', 'fontSize',
+    'boxSizing', 'boxShadow', 'fontFamily', 'fontSize',
     'fontWeight', 'gap', 'height', 'justifyContent', 'letterSpacing', 'lineHeight',
     'maxHeight', 'minHeight', 'minWidth', 'paddingBottom', 'paddingLeft',
     'paddingRight', 'paddingTop', 'textTransform', 'verticalAlign', 'whiteSpace',
   ];
+
+  /** Text properties mirrored from the element that renders Google's label. */
+  const MIRRORED_TEXT_PROPS = [
+    'color', 'fontFamily', 'fontSize', 'fontStyle', 'fontWeight',
+    'letterSpacing', 'lineHeight', 'textTransform',
+  ];
+
+  /**
+   * The element that actually renders a control's label text. Google wraps the
+   * "Collapse all" label in its own <span> that carries the real typography, so
+   * the button's own computed font can differ from the glyphs on screen.
+   */
+  function findLabelElement(el) {
+    const label = (el.textContent || '').trim();
+    if (!label) return el;
+    let best = el;
+    const walk = (node) => {
+      for (const child of node.children) {
+        if (child.namespaceURI === 'http://www.w3.org/2000/svg') continue;
+        // Only descend through elements holding exactly this control's label,
+        // so hidden extras (tooltips, ripple hosts) are never picked up.
+        if ((child.textContent || '').trim() !== label) continue;
+        best = child;
+        walk(child);
+      }
+    };
+    walk(el);
+    return best;
+  }
 
   /**
    * Copy the look of Classroom's own "Collapse all" button onto our button so
@@ -1360,14 +1389,35 @@
         if (value) btn.style[prop] = value;
       }
       if (cs.display) btn.style.display = cs.display;
+
+      // Typography comes from the label element, not the button box, so the
+      // text matches the "Collapse all" glyphs in type, colour and size.
+      const labelEl = findLabelElement(source);
+      const labelCS = labelEl === source ? cs : getComputedStyle(labelEl);
+      btn.style.color = labelCS.color;
+      const textSpan = btn.querySelector('.cpp-sort-text');
+      if (textSpan) {
+        for (const prop of MIRRORED_TEXT_PROPS) {
+          const value = labelCS[prop];
+          if (value) {
+            textSpan.style[prop] = value;
+          } else {
+            // Clear anything left over from a previous source button.
+            textSpan.style.removeProperty(
+              prop.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)
+            );
+          }
+        }
+      }
+
       // Sits to the left of "Collapse all" with the same gap it uses itself.
       btn.style.marginRight = '8px';
       btn.style.marginLeft = '0px';
       btn.style.cursor = 'pointer';
       if (active) {
+        // Keep the label exactly like "Collapse all"'s; the tint shows the state.
         btn.style.backgroundColor = 'rgba(11, 87, 208, 0.12)';
         btn.style.borderColor = '#0b57d0';
-        btn.style.color = '#0b57d0';
       }
     } catch (_) {
       // Computed styles are a nicety; the CSS fallback still applies.
