@@ -34,7 +34,8 @@ extension's storage in `chrome://extensions`.
 
 ## How the extension interacts with pages
 
-The content script runs only on `https://classroom.google.com/*`. It reads the page to
+Once you click **Enable on Google Classroom**, the content script runs only on
+`https://classroom.google.com/*`. It reads the page to
 find topic sections, posts and "View more" buttons so it can lay them out and, at your
 request, expand them. That information stays in the page: it is never copied into
 storage and never sent anywhere.
@@ -47,7 +48,13 @@ would click yourself, only for the rows you selected.
 | Permission | Why |
 | --- | --- |
 | `storage` | Save the three toggles above with Chrome's sync storage |
-| `https://classroom.google.com/*` | Run the content script on Classroom, and refresh open Classroom tabs when you change a setting in the popup |
+| `scripting` | Add the content script to Classroom, but only after you grant access |
+| `https://classroom.google.com/*` (optional) | Run the content script on Classroom, and refresh open Classroom tabs when you change a setting in the popup |
+
+Access to `classroom.google.com` is **optional and never requested at install**: Chrome
+shows its prompt only when you click **Enable on Google Classroom** in the welcome page or
+the popup. Until then nothing is injected into any page. You can revoke the site at any
+time from `chrome://extensions`.
 
 No other permissions are requested. There is no `tabs`, `history`, `bookmarks`,
 `cookies` or `<all_urls>` access.
@@ -60,8 +67,8 @@ or store student work beyond rendering it on the page you are already viewing.
 ## Changes
 
 Any change to this policy will be published in this file in the project repository
-(https://github.com/jcykung/betterclassroom) and in the next extension release.
+(https://github.com/jcykung/ClassroomPlusPlus) and in the next extension release.
 
 ## Contact
 
-Jonathan Kung — open an issue at https://github.com/jcykung/betterclassroom/issues.
+Jonathan Kung — open an issue at https://github.com/jcykung/ClassroomPlusPlus/issues.

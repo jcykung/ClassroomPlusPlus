@@ -5,6 +5,68 @@ document.addEventListener('DOMContentLoaded', () => {
   const tipBtn = document.getElementById('tipBtn');
   const welcomeLink = document.getElementById('welcomeLink');
   const versionLink = document.getElementById('versionLink');
+  const enableCard = document.getElementById('enableCard');
+  const enableBtn = document.getElementById('enableBtn');
+  const settingsGroup = document.getElementById('settingsGroup');
+
+  // Site access is optional: Chrome asks for classroom.google.com only when the
+  // user clicks, never at install.
+  const CLASSROOM_ORIGIN = 'https://classroom.google.com/*';
+  const STATUS_DEFAULT = 'Settings sync automatically across all your devices.';
+
+  function setStatus(text, color) {
+    if (!statusEl) return;
+    statusEl.textContent = text;
+    statusEl.style.color = color;
+    clearTimeout(setStatus.timer);
+    if (text === STATUS_DEFAULT) return;
+    setStatus.timer = setTimeout(() => {
+      statusEl.textContent = STATUS_DEFAULT;
+      statusEl.style.color = '#718096';
+    }, 3000);
+  }
+
+  /**
+   * Without site access nothing is injected, so the switches stay locked and
+   * the Enable button takes their place.
+   */
+  function setAccessState(granted) {
+    if (enableCard) enableCard.hidden = granted;
+    if (settingsGroup) settingsGroup.classList.toggle('is-locked', !granted);
+    for (const toggle of [toggleLayout, toggleBulkReview]) {
+      if (toggle) toggle.disabled = !granted;
+    }
+  }
+
+  function checkAccess() {
+    if (!chrome.permissions || !chrome.permissions.contains) return setAccessState(false);
+    chrome.permissions.contains({ origins: [CLASSROOM_ORIGIN] }, (granted) => {
+      setAccessState(Boolean(granted) && !chrome.runtime.lastError);
+    });
+  }
+
+  // Enable on Google Classroom
+  if (enableBtn) {
+    enableBtn.addEventListener('click', () => {
+      enableBtn.disabled = true;
+      // Must run straight from the click: Chrome only prompts for a gesture.
+      chrome.permissions.request({ origins: [CLASSROOM_ORIGIN] }, (granted) => {
+        enableBtn.disabled = false;
+        if (chrome.runtime.lastError || !granted) {
+          setStatus('Access was not granted, so Classroom++ stays off.', '#b91c1c');
+          return;
+        }
+        setAccessState(true);
+        // The background worker registers the content script and refreshes
+        // Classroom tabs that are already open.
+        chrome.runtime.sendMessage(
+          { type: 'classroom-access-changed', granted: true },
+          () => void chrome.runtime.lastError
+        );
+        setStatus('Enabled — open Google Classroom to see it.', '#16803c');
+      });
+    });
+  }
 
   // Tip Me button (Ko-Fi)
   if (tipBtn) {
@@ -52,7 +114,10 @@ document.addEventListener('DOMContentLoaded', () => {
     reloadTimer = setTimeout(() => {
       reloadTimer = 0;
       if (!chrome.tabs || !chrome.tabs.query) return;
-      chrome.tabs.query({ url: 'https://classroom.google.com/*' }, (tabs) => {
+      chrome.tabs.query({ url: CLASSROOM_ORIGIN }, (tabs) => {
+        // Without the optional host permission this query can fail; the
+        // switches are locked in that case, so there is nothing to reload.
+        if (chrome.runtime.lastError) return;
         for (const tab of tabs || []) {
           if (typeof tab.id === 'number') chrome.tabs.reload(tab.id);
         }
@@ -69,14 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (toggleBulkReview) settings.bulkReview = toggleBulkReview.checked;
 
     chrome.storage.sync.set(settings, () => {
-      if (statusEl) {
-        statusEl.textContent = 'Settings saved and synced!';
-        statusEl.style.color = '#16803c';
-        setTimeout(() => {
-          statusEl.textContent = 'Settings sync automatically across all your devices.';
-          statusEl.style.color = '#718096';
-        }, 1800);
-      }
+      setStatus('Settings saved and synced!', '#16803c');
       reloadClassroomTabs();
     });
   }
@@ -87,5 +145,6 @@ document.addEventListener('DOMContentLoaded', () => {
   if (toggleBulkReview) {
     toggleBulkReview.addEventListener('change', saveSettings);
   }
-});
 
+  checkAccess();
+});

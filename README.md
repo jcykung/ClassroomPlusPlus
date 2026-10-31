@@ -47,7 +47,11 @@ Changing a switch refreshes any open Classroom tabs so the new layout is live im
 
 ## Scope and privacy
 
-- Runs **only** on `https://classroom.google.com/*`; requests only `storage` plus that one host.
+- Runs **only** on `https://classroom.google.com/*`, and only after you allow it. Site access is
+  **optional**: nothing is requested or injected at install. Click **Enable on Google Classroom**
+  on the welcome page or in the popup, and Chrome asks for that one site. The extension declares
+  `storage` and `scripting` (to register the content script once access is granted); revoking the
+  site in Chrome turns it off again.
 - Home, Stream, Calendar, People and the To-do page are left exactly as Google renders them.
 - No analytics, no accounts, no network requests, no remote code or fonts — everything ships in the
   package and runs locally. See [PRIVACY.md](PRIVACY.md).
@@ -56,10 +60,12 @@ Changing a switch refreshes any open Classroom tabs so the new layout is live im
 
 1. Open `chrome://extensions` and enable **Developer mode**.
 2. Click **Load unpacked** and select this directory (the one containing `manifest.json`).
-3. Open any Google Classroom **Classwork** page.
+3. The welcome page opens: click **Enable on Google Classroom** and accept Chrome's prompt. The
+   same button is in the popup if you skip it. Nothing is injected until you do this.
+4. Open any Google Classroom **Classwork** page.
 
-> On install, every open Google Classroom tab is reloaded automatically so the extension starts
-> working without a manual refresh.
+> Granting access reloads any Classroom tab that is already open, so the extension starts working
+> without a manual refresh.
 
 > After changing code, press the ⟳ reload button on the Classroom++ card, then refresh Classroom.
 
@@ -96,7 +102,7 @@ Submission copy, permission justifications, data-usage answers and the review ch
 | Path | Purpose |
 | --- | --- |
 | `manifest.json` | Manifest V3 definition, permissions, CSP |
-| `background.js` | Install/update lifecycle (defaults, welcome screen, changelog) |
+| `background.js` | Content-script registration after access is granted, install/update lifecycle (defaults, welcome screen, changelog) |
 | `src/content.js` | All page behaviour: detection, 5-post windows, loading, To review bulk select |
 | `src/content.css` | Scoped styles for the windows, toggles, overlay and To review UI |
 | `popup.html` / `popup.js` | The extension popup with the two switches |

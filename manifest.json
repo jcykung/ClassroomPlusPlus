@@ -2,13 +2,13 @@
   "manifest_version": 3,
   "name": "Classroom++",
   "short_name": "Classroom++",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Scrollable 5-post topic windows on the Google Classroom Classwork tab, plus bulk select on the To review page.",
   "minimum_chrome_version": "116",
   "author": "Jonathan Kung",
-  "homepage_url": "https://github.com/jcykung/betterclassroom",
-  "permissions": ["storage"],
-  "host_permissions": ["https://classroom.google.com/*"],
+  "homepage_url": "https://github.com/jcykung/ClassroomPlusPlus",
+  "permissions": ["storage", "scripting"],
+  "optional_host_permissions": ["https://classroom.google.com/*"],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
   },
@@ -30,14 +30,5 @@
   },
   "background": {
     "service_worker": "background.js"
-  },
-  "content_scripts": [
-    {
-      "matches": ["https://classroom.google.com/*"],
-      "js": ["src/content.js"],
-      "css": ["src/content.css"],
-      "run_at": "document_idle",
-      "all_frames": false
-    }
-  ]
+  }
 }

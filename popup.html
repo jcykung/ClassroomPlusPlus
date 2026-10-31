@@ -103,6 +103,47 @@
         transform: translateY(-1px);
         box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
       }
+      /* `.card` sets display: flex, which would otherwise beat [hidden]. */
+      .card[hidden] {
+        display: none;
+      }
+      .enable-card {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+        border: 1px solid rgba(22, 128, 60, 0.22);
+        background: rgba(232, 245, 233, 0.94);
+      }
+      .enable-note {
+        margin: 0 0 8px 0;
+        font-size: 11px;
+        line-height: 1.5;
+        color: #4a5568;
+      }
+      .enable-btn {
+        width: 100%;
+        padding: 10px 14px;
+        background: #16803c;
+        color: #fff;
+        border: none;
+        border-radius: 10px;
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s ease;
+      }
+      .enable-btn:hover {
+        background: #137333;
+      }
+      .enable-btn:disabled {
+        background: #94a3b8;
+        cursor: default;
+      }
+      .settings-group.is-locked {
+        opacity: 0.55;
+        pointer-events: none;
+      }
       .label {
         font-size: 13px;
         font-weight: 600;
@@ -295,6 +336,17 @@
       </button>
     </div>
 
+    <!-- Site access is optional: nothing runs until this is clicked. -->
+    <div class="card enable-card" id="enableCard" hidden>
+      <div class="label">Enable on Google Classroom</div>
+      <p class="enable-note">
+        Classroom++ asks for no site access until you click. Chrome will request access to
+        classroom.google.com only, and you can revoke it at any time from Chrome.
+      </p>
+      <button class="enable-btn" id="enableBtn" type="button">Enable on Google Classroom</button>
+    </div>
+
+    <div class="settings-group" id="settingsGroup">
     <!-- Setting 1: Classwork Layout (all Classwork enhancements) -->
     <div class="card">
       <div class="label">
@@ -323,6 +375,7 @@
         <input type="checkbox" id="toggleBulkReview" checked />
         <span class="slider"></span>
       </label>
+    </div>
     </div>
 
     <div class="footer" id="statusMessage">

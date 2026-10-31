@@ -28,9 +28,9 @@ Scrollable 5-post topic windows on the Google Classroom Classwork tab, plus bulk
 
 **Language:** English
 
-**Homepage URL:** https://github.com/jcykung/betterclassroom
-**Support URL:** https://github.com/jcykung/betterclassroom/issues
-**Privacy policy URL:** https://github.com/jcykung/betterclassroom/blob/main/PRIVACY.md
+**Homepage URL:** https://github.com/jcykung/ClassroomPlusPlus
+**Support URL:** https://github.com/jcykung/ClassroomPlusPlus/issues
+**Privacy policy URL:** https://github.com/jcykung/ClassroomPlusPlus/blob/main/PRIVACY.md
 
 **Detailed description:**
 
@@ -63,6 +63,8 @@ PRIVACY
 • No accounts, no analytics, no tracking, no ads, no network requests. Settings live in
   Chrome's own sync storage. Everything the extension does happens locally in the tab
   you are already viewing.
+• You decide when it runs: Classroom++ requests no site access at install. Click "Enable on
+  Google Classroom" once and Chrome asks for that one site; revoke it any time in Chrome.
 
 Classroom++ is an independent project. It is not affiliated with, endorsed by, or
 sponsored by Google. Google Classroom is a trademark of Google LLC.
@@ -85,12 +87,20 @@ Stores the user's three display preferences (Classwork layout on/off, bulk selec
 reverse order on/off) in chrome.storage.sync. No personal data is stored.
 ```
 
-**Host permission `https://classroom.google.com/*`**
+**`scripting`**
 ```
-The extension's entire function is to adjust Google Classroom's own pages. The content
+Used only to add the content script to Google Classroom after the user grants access, and
+to remove that registration if access is revoked. It never targets any other site.
+```
+
+**Optional host permission `https://classroom.google.com/*`**
+```
+The extension's entire function is to adjust Google Classroom's own pages, so the content
 script must run there to lay out topic sections and to add the To review checkboxes. The
-same host permission lets the popup refresh open Classroom tabs so a settings change takes
-effect immediately. No other site is requested.
+host is declared optional and is requested only from a user click on "Enable on Google
+Classroom" in the popup or the welcome page — never at install, and never for any other
+site. The same access lets the popup refresh open Classroom tabs so a settings change
+takes effect immediately.
 ```
 
 ## Data usage answers (Privacy practices tab)
@@ -108,8 +118,11 @@ effect immediately. No other site is requested.
 - [x] Manifest V3, no background page, no `eval`, no `new Function`, no inline scripts.
 - [x] No remotely hosted code or assets — Google Fonts links were removed in favour of
       system fonts.
-- [x] Permissions are the minimum needed: `storage` + the single Classroom host.
+- [x] Permissions are the minimum needed: `storage`, `scripting`, and one optional Classroom
+      host that is only requested from a user click. No site access at install.
 - [x] Description matches what the extension actually does; single purpose is stated.
+- [x] Users must click **Enable on Google Classroom** before anything is injected; the
+      welcome page and popup both request the same optional host from that click.
 - [x] Icons 16/32/48/128 present and valid PNG.
 - [x] Privacy policy reachable, and the extension is not affiliated with Google (stated
       in the detailed description).
