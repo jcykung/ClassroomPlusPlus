@@ -28,9 +28,9 @@ Scrollable 5-post topic windows on the Google Classroom Classwork tab, plus bulk
 
 **Language:** English
 
-**Homepage URL:** https://github.com/jcykung/ClassroomPlusPlus
-**Support URL:** https://github.com/jcykung/ClassroomPlusPlus/issues
-**Privacy policy URL:** https://github.com/jcykung/ClassroomPlusPlus/blob/main/PRIVACY.md
+**Homepage URL:** https://github.com/jcykung/classroomplusplus
+**Support URL:** https://github.com/jcykung/classroomplusplus/issues
+**Privacy policy URL:** https://github.com/jcykung/classroomplusplus/blob/main/PRIVACY.md
 
 **Detailed description:**
 

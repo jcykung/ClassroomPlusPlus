@@ -6,7 +6,7 @@
   "description": "Scrollable 5-post topic windows on the Google Classroom Classwork tab, plus bulk select on the To review page.",
   "minimum_chrome_version": "116",
   "author": "Jonathan Kung",
-  "homepage_url": "https://github.com/jcykung/ClassroomPlusPlus",
+  "homepage_url": "https://github.com/jcykung/classroomplusplus",
   "permissions": ["storage", "scripting"],
   "optional_host_permissions": ["https://classroom.google.com/*"],
   "content_security_policy": {

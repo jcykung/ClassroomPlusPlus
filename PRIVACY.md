@@ -67,8 +67,8 @@ or store student work beyond rendering it on the page you are already viewing.
 ## Changes
 
 Any change to this policy will be published in this file in the project repository
-(https://github.com/jcykung/ClassroomPlusPlus) and in the next extension release.
+(https://github.com/jcykung/classroomplusplus) and in the next extension release.
 
 ## Contact
 
-Jonathan Kung — open an issue at https://github.com/jcykung/ClassroomPlusPlus/issues.
+Jonathan Kung — open an issue at https://github.com/jcykung/classroomplusplus/issues.
